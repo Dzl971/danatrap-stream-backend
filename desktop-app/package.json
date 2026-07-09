@@ -1,0 +1,30 @@
+{
+  "name": "danatrap-stream",
+  "version": "1.0.0",
+  "description": "DanaTrap Stream - Streaming personnel",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "author": "Dzl 971",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^38.4.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.danatrap.stream",
+    "productName": "DanaTrap Stream",
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico"
+    },
+    "files": [
+      "main.js",
+      "index.html",
+      "support.js"
+    ]
+  }
+}

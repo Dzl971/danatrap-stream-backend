@@ -1,0 +1,8 @@
+credentials.json
+token.pickle
+__pycache__/
+*.pyc
+extrait_test.mp4
+bibliotheque.json
+token_base64.txt
+utilisateurs.json

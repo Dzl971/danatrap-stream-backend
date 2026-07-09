@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environnement
+.env
+.venv/
+venv/
+
+# Tokens / secrets
+backend/token.pickle
+backend/token_base64.txt
+backend/credentials.json
+backend/server.log
+backend/server_output.log
+
+# Desktop app build artifacts
+desktop-app/dist/
+desktop-app/node_modules/
+desktop-app/win-unpacked/
+*.exe
+*.blockmap
+builder-debug.yml
+builder-effective-config.yaml
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop-app/.thumbnail
+frontend/.thumbnail
