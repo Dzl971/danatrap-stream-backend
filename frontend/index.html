@@ -31,6 +31,39 @@ input { outline: none; }
 .pcard:hover { transform: scale(1.15); z-index: 40; }
 .pcard .pinfo { opacity: 0; pointer-events: none; transition: opacity 0.25s ease 0.08s; }
 .pcard:hover .pinfo { opacity: 1; pointer-events: auto; }
+
+/* ============ RESPONSIVE MOBILE ============ */
+@media (max-width: 768px) {
+  .dt-header { flex-wrap: wrap !important; gap: 10px !important; padding: 12px 16px !important; }
+  .dt-header > div { width: 100% !important; }
+  .dt-header > div:first-child { justify-content: space-between !important; }
+  .dt-header > div:last-child { justify-content: flex-start !important; gap: 10px !important; flex-wrap: wrap !important; }
+  .dt-header input { width: 100% !important; }
+  .dt-header input[style-focus*="width:300px"] { width: 100% !important; }
+
+  .dt-hero { height: 70vh !important; min-height: 420px !important; }
+  .dt-hero-content { left: 16px !important; right: 16px !important; bottom: 80px !important; max-width: none !important; gap: 10px !important; justify-content: flex-end !important; }
+  .dt-hero-content [style*="font-size:58px"] { font-size: 34px !important; }
+  .dt-hero-content [style*="font-size:15px;line-height:1.5"] { font-size: 14px !important; -webkit-line-clamp: 2 !important; }
+  .dt-hero-content [style*="padding:13px 26px"][style*="font-size:19px"] { padding: 12px 20px !important; font-size: 16px !important; }
+
+  .dt-sections { padding: 24px 16px 48px !important; gap: 28px !important; }
+  [style*="padding:32px 40px 64px"] { padding: 24px 16px 48px !important; }
+  [style*="padding:16px 40px"] { padding-left: 16px !important; padding-right: 16px !important; }
+  [style*="padding:80px 40px"] { padding: 60px 16px !important; }
+
+  h2[style*="font-size:28px"] { font-size: 22px !important; }
+
+  .row-wrap { margin: 0 -16px !important; padding: 0 16px !important; }
+  .dt-card { width: 132px !important; }
+  .dt-card .pcard { width: 132px !important; height: 198px !important; }
+  [style*="flex:0 0 auto;width:172px;height:258px"] { width: 132px !important; height: 198px !important; }
+
+  [style*="display:flex;flex-wrap:wrap;gap:16px"] { gap: 12px !important; }
+
+  [style*="position:fixed;inset:0;z-index:80"] > div { width: calc(100% - 32px) !important; max-width: none !important; }
+}
+
 </style>
 </helmet>
 <div style="min-height:100vh;background:#0D0B14;color:#EDEAF4;font-family:'Barlow',sans-serif;overflow-x:hidden">
@@ -75,7 +108,7 @@ input { outline: none; }
   <!-- ============ LIBRARY ============ -->
   <sc-if value="{{ isLibrary }}" hint-placeholder-val="{{ false }}">
     <div style="min-height:100vh">
-      <div style="position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:16px 40px;background:rgba(13,11,20,0.85);backdrop-filter:blur(12px);border-bottom:1px solid #1E1A2C">
+      <div class="dt-header" style="position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:16px 40px;background:rgba(13,11,20,0.85);backdrop-filter:blur(12px);border-bottom:1px solid #1E1A2C">
         <div style="display:flex;align-items:center;gap:28px">
           <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;font-size:30px;letter-spacing:1px;background:linear-gradient(100deg, #FF006E 20%, #00F0FF 85%);-webkit-background-clip:text;background-clip:text;color:transparent;text-transform:uppercase">Danatrap</div>
           <div style="display:flex;align-items:center;gap:4px">
@@ -123,7 +156,7 @@ input { outline: none; }
 
       <sc-if value="{{ libReady }}" hint-placeholder-val="{{ false }}">
         <sc-if value="{{ heroOn }}" hint-placeholder-val="{{ false }}">
-          <div style="position:relative;width:100%;height:52vh;min-height:360px;overflow:hidden;background:#0A0812">
+          <div class="dt-hero" style="position:relative;width:100%;height:52vh;min-height:360px;overflow:hidden;background:#0A0812">
             <sc-for list="{{ heroSlides }}" as="h" hint-placeholder-count="1">
               <div style="position:absolute;inset:0;opacity:{{ h.opacity }};pointer-events:{{ h.pe }};transition:opacity 0.9s ease">
                 <sc-if value="{{ h.posterUrl }}" hint-placeholder-val="{{ false }}">
@@ -131,7 +164,7 @@ input { outline: none; }
                 </sc-if>
                 <div style="position:absolute;inset:0;background:linear-gradient(90deg, rgba(13,11,20,0.96) 0%, rgba(13,11,20,0.82) 34%, rgba(13,11,20,0.25) 70%, rgba(13,11,20,0.45) 100%)"></div>
                 <div style="position:absolute;left:0;right:0;bottom:0;height:120px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, #0D0B14 100%)"></div>
-                <div style="position:absolute;left:40px;top:0;bottom:44px;display:flex;flex-direction:column;justify-content:center;gap:14px;max-width:560px">
+                <div class="dt-hero-content" style="position:absolute;left:40px;top:0;bottom:44px;display:flex;flex-direction:column;justify-content:center;gap:14px;max-width:560px">
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <div style="flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:{{ h.accent }};border:1px solid {{ h.accent }};border-radius:3px;padding:3px 8px">{{ h.badge }}</div>
                     <sc-if value="{{ h.hasGenres }}" hint-placeholder-val="{{ false }}">
@@ -177,7 +210,7 @@ input { outline: none; }
           </div>
         </sc-if>
         <sc-if value="{{ showHome }}" hint-placeholder-val="{{ true }}">
-        <div style="display:flex;flex-direction:column;gap:40px;padding:32px 40px 64px">
+        <div class="dt-sections" style="display:flex;flex-direction:column;gap:40px;padding:32px 40px 64px">
           <sc-for list="{{ sections }}" as="sec" hint-placeholder-count="3">
             <div style="display:flex;flex-direction:column;gap:14px">
               <div style="display:flex;align-items:center;gap:12px">
@@ -204,7 +237,7 @@ input { outline: none; }
               <div class="row-wrap" style="position:relative">
               <div ref="{{ sec.rowRef }}" onScroll="{{ sec.onRowScroll }}" class="hide-scrollbar" style="display:flex;gap:16px;overflow-x:auto;padding:26px 4px 26px;scroll-behavior:smooth">
                 <sc-for list="{{ sec.items }}" as="item" hint-placeholder-count="4">
-                  <div onClick="{{ item.open }}" style="flex:0 0 auto;width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
+                  <div class="dt-card" onClick="{{ item.open }}" style="flex:0 0 auto;width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
                     <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#14111E;border:1px solid #221D31" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px {{ sec.glow }};border-color:{{ sec.accent }}">
                       <div style="position:absolute;inset:0;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
@@ -286,7 +319,7 @@ input { outline: none; }
             <sc-if value="{{ hasCatalogueItems }}" hint-placeholder-val="{{ false }}">
               <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(172px, 1fr));gap:26px 16px;padding:26px 4px">
                 <sc-for list="{{ catalogueItems }}" as="item" hint-placeholder-count="8">
-                  <div onClick="{{ item.open }}" style="width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
+                  <div class="dt-card" onClick="{{ item.open }}" style="width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
                     <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#14111E;border:1px solid #221D31" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(255,0,110,0.3);border-color:#FF006E">
                       <div style="position:absolute;inset:0;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
@@ -334,7 +367,7 @@ input { outline: none; }
             <sc-if value="{{ hasResults }}" hint-placeholder-val="{{ false }}">
               <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(172px, 1fr));gap:26px 16px;padding:26px 4px">
                 <sc-for list="{{ searchResults }}" as="item" hint-placeholder-count="4">
-                  <div onClick="{{ item.open }}" style="width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
+                  <div class="dt-card" onClick="{{ item.open }}" style="width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
                     <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#14111E;border:1px solid #221D31" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(0,240,255,0.3);border-color:#00F0FF">
                       <div style="position:absolute;inset:0;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
