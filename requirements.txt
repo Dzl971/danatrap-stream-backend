@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+bcrypt
+python-jose[cryptography]
+python-multipart
+requests
