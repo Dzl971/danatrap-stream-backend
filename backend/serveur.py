@@ -578,17 +578,20 @@ def get_audio(video_id: str, track_index: int, request: Request, token: Optional
         if track_index < 0 or track_index >= len(audio_streams):
             raise HTTPException(status_code=400, detail="Index audio invalide")
         stream_index = audio_streams[track_index].get("index")
+        codec = audio_streams[track_index].get("codec_name", "")
         # Stream AAC inside a fragmented MP4 container directly to stdout (no temp file)
+        # Use copy if already AAC, otherwise transcode
+        codec_args = ["-c:a", "copy"] if codec in ("aac",) else ["-c:a", "aac", "-b:a", "192k"]
         process = subprocess.Popen(
             [
                 "ffmpeg", "-y", "-headers", headers, "-i", url,
                 "-map", f"0:{stream_index}",
-                "-c:a", "aac", "-b:a", "192k",
+                *codec_args,
                 "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
                 "pipe:1"
             ],
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.DEVNULL
         )
         def generate():
             try:
