@@ -989,7 +989,21 @@ class Component extends DCLogic {
   };
 
   // ---- player wiring ----
-  audioRef = (el) => { this._audio = el; };
+  audioRef = (el) => {
+    this._audio = el;
+    if (el && this.state.currentAudioTrack >= 0 && this.state.currentVideoId) {
+      const url = this.api + '/audio/' + encodeURIComponent(this.state.currentVideoId) + '/' + this.state.currentAudioTrack + '?token=' + encodeURIComponent(this.state.token);
+      if (el.src !== url) {
+        el.src = url;
+        el.load();
+        const v = this._video;
+        if (v) {
+          el.currentTime = v.currentTime;
+          if (!v.paused) el.play().catch(() => {});
+        }
+      }
+    }
+  };
 
   _syncAudioToVideo = () => {
     const v = this._video; const a = this._audio;
