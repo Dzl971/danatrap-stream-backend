@@ -999,7 +999,9 @@ class Component extends DCLogic {
         const v = this._video;
         if (v) {
           el.currentTime = v.currentTime;
-          if (!v.paused) el.play().catch(() => {});
+          if (!v.paused) el.play().catch(() => {
+            setTimeout(() => { if (v && !v.paused) el.play().catch(() => {}); }, 300);
+          });
         }
       }
     }
@@ -1012,6 +1014,13 @@ class Component extends DCLogic {
     a.playbackRate = v.playbackRate;
     a.muted = v.muted;
     a.volume = v.volume;
+  };
+
+  _onAudioCanPlay = () => {
+    const v = this._video; const a = this._audio;
+    if (!v || !a) return;
+    a.currentTime = v.currentTime;
+    if (!v.paused) a.play().catch(() => {});
   };
 
   _loadTracks = async (videoId) => {
@@ -1040,8 +1049,15 @@ class Component extends DCLogic {
     if (a) {
       a.src = url;
       a.load();
-      a.currentTime = v ? v.currentTime : 0;
-      if (v && !v.paused) a.play().catch(() => {});
+      if (v) {
+        a.currentTime = v.currentTime;
+        if (!v.paused) {
+          a.play().catch((err) => {
+            // Retry playback after a short delay if the audio isn't ready yet
+            setTimeout(() => { if (!v.paused) a.play().catch(() => {}); }, 300);
+          });
+        }
+      }
     }
     if (v) v.muted = true;
   };
@@ -1051,7 +1067,29 @@ class Component extends DCLogic {
     this.setState({ currentSubtitleTrack: index });
     const v = this._video;
     if (!v) return;
-    Array.from(v.textTracks || []).forEach((t, i) => { t.mode = i === index ? 'showing' : 'hidden'; });
+    this._applySubtitles(v, index);
+  };
+
+  _applySubtitles = (v, index) => {
+    if (!v) return;
+    const tracks = v.textTracks || [];
+    for (let i = 0; i < tracks.length; i++) {
+      tracks[i].mode = i === index ? 'showing' : 'hidden';
+    }
+    // If tracks exist but aren't loaded yet, listen for load events
+    const trackEls = v.querySelectorAll('track');
+    trackEls.forEach((el, i) => {
+      if (el.readyState === 0) {
+        el.addEventListener('load', () => {
+          const tt = v.textTracks;
+          if (tt && tt[i]) tt[i].mode = i === this.state.currentSubtitleTrack ? 'showing' : 'hidden';
+        }, { once: true });
+      }
+    });
+    // Retry once after a short delay in case textTracks aren't populated yet
+    if (tracks.length === 0 && index >= 0) {
+      setTimeout(() => this._applySubtitles(v, index), 800);
+    }
   };
 
   videoRef = (el) => {
@@ -1445,10 +1483,11 @@ class Component extends DCLogic {
         style: { width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' },
       }, s.subtitleTracks.map((t, i) => React.createElement('track', {
         key: 'sub-' + i, kind: 'subtitles', src: t.src, srclang: t.language || 'und',
-        label: t.label || ('Piste ' + (i + 1)), default: i === s.currentSubtitleTrack,
+        label: t.label || ('Piste ' + (i + 1)),
       }))) : null,
       audioEl: s.videoUrl ? React.createElement('audio', {
         ref: this.audioRef, autoPlay: false, preload: s.currentAudioTrack >= 0 ? 'auto' : 'none',
+        onCanPlay: this._onAudioCanPlay,
         style: { position: 'absolute', left: 0, top: 0, width: 0, height: 0, opacity: 0, pointerEvents: 'none' },
       }) : null,
       detailSeasons: detailSeasons,
