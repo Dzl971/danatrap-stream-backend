@@ -472,7 +472,22 @@ def _normaliser_langue(tags: dict) -> str:
     for key in ("language", "LANGUAGE", "lang", "LANG"):
         if key in tags and tags[key]:
             return tags[key]
-    return "inconnu"
+    return ""
+
+_HANDLERS_GENERIQUES = {"soundhandler", "subtitleshandler", "subtitlehandler", "handler"}
+
+def _format_track_label(tags: dict, stream_type: str, index: int) -> str:
+    lang = _normaliser_langue(tags).strip()
+    raw_title = (tags.get("title") or tags.get("name") or tags.get("handler_name") or "").strip()
+    title = raw_title if raw_title.lower() not in _HANDLERS_GENERIQUES else ""
+    prefix = "Audio" if stream_type == "a" else "Sous-titre"
+    if lang and title:
+        return f"{lang.upper()} - {title}"
+    if lang:
+        return f"{prefix} {index + 1} ({lang.upper()})"
+    if title:
+        return f"{prefix} {index + 1} - {title}"
+    return f"{prefix} {index + 1}"
 
 @app.get("/tracks/{video_id}")
 def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
@@ -486,7 +501,7 @@ def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
                 "index": i,
                 "stream_index": s.get("index"),
                 "language": _normaliser_langue(tags),
-                "title": tags.get("title") or tags.get("name") or tags.get("handler_name") or "",
+                "title": _format_track_label(tags, "a", i),
                 "codec": s.get("codec_name", ""),
                 "default": bool(s.get("disposition", {}).get("default", 0))
             })
@@ -497,7 +512,7 @@ def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
                 "index": i,
                 "stream_index": s.get("index"),
                 "language": _normaliser_langue(tags),
-                "title": tags.get("title") or tags.get("name") or tags.get("handler_name") or "",
+                "title": _format_track_label(tags, "s", i),
                 "codec": s.get("codec_name", ""),
                 "default": bool(s.get("disposition", {}).get("default", 0))
             })

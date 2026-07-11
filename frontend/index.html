@@ -1031,7 +1031,7 @@ class Component extends DCLogic {
     this.setState({ currentAudioTrack: index });
     const a = this._audio; const v = this._video;
     if (index < 0) {
-      if (a) { a.pause(); a.src = ''; }
+      if (a) { a.pause(); a.removeAttribute('src'); a.load(); }
       if (v) { v.muted = false; }
       return;
     }
@@ -1447,8 +1447,8 @@ class Component extends DCLogic {
         key: 'sub-' + i, kind: 'subtitles', src: t.src, srclang: t.language || 'und',
         label: t.label || ('Piste ' + (i + 1)), default: i === s.currentSubtitleTrack,
       }))) : null,
-      audioEl: (s.videoUrl && s.currentAudioTrack >= 0) ? React.createElement('audio', {
-        ref: this.audioRef, autoPlay: false,
+      audioEl: s.videoUrl ? React.createElement('audio', {
+        ref: this.audioRef, autoPlay: false, preload: s.currentAudioTrack >= 0 ? 'auto' : 'none',
         style: { position: 'absolute', left: 0, top: 0, width: 0, height: 0, opacity: 0, pointerEvents: 'none' },
       }) : null,
       detailSeasons: detailSeasons,
