@@ -520,8 +520,28 @@ def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur analyse des pistes: {e}")
 
+def _verifier_token_query(request: Request, token: Optional[str] = Query(None)):
+    """Verifie le JWT depuis le query param 'token' ou le header Authorization.
+    Necessaire car les elements <track> et <audio> ne peuvent pas envoyer de headers."""
+    token_final = token
+    if not token_final:
+        auth_header = request.headers.get('authorization', '')
+        if auth_header.startswith('Bearer '):
+            token_final = auth_header.replace('Bearer ', '')
+    if not token_final:
+        raise HTTPException(status_code=401, detail="Token manquant")
+    try:
+        payload = jwt.decode(token_final, CLE_SECRETE_JWT, algorithms=[ALGORITHME])
+        pseudo = payload.get("sub")
+        if pseudo is None:
+            raise HTTPException(status_code=401, detail="Token invalide")
+        return {"pseudo": pseudo, "est_admin": payload.get("est_admin", False)}
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalide ou expire")
+
 @app.get("/subtitle/{video_id}/{track_index}")
-def get_subtitle(video_id: str, track_index: int, utilisateur: dict = Depends(verifier_token)):
+def get_subtitle(video_id: str, track_index: int, request: Request, token: Optional[str] = Query(None)):
+    utilisateur = _verifier_token_query(request, token)
     try:
         url = _get_drive_media_url(video_id)
         headers = _get_drive_auth_header()
@@ -549,7 +569,8 @@ def get_subtitle(video_id: str, track_index: int, utilisateur: dict = Depends(ve
         raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {e}")
 
 @app.get("/audio/{video_id}/{track_index}")
-def get_audio(video_id: str, track_index: int, utilisateur: dict = Depends(verifier_token)):
+def get_audio(video_id: str, track_index: int, request: Request, token: Optional[str] = Query(None)):
+    utilisateur = _verifier_token_query(request, token)
     try:
         url = _get_drive_media_url(video_id)
         headers = _get_drive_auth_header()
