@@ -486,7 +486,7 @@ def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
                 "index": i,
                 "stream_index": s.get("index"),
                 "language": _normaliser_langue(tags),
-                "title": tags.get("title") or tags.get("handler_name") or "",
+                "title": tags.get("title") or tags.get("name") or tags.get("handler_name") or "",
                 "codec": s.get("codec_name", ""),
                 "default": bool(s.get("disposition", {}).get("default", 0))
             })
@@ -497,7 +497,7 @@ def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
                 "index": i,
                 "stream_index": s.get("index"),
                 "language": _normaliser_langue(tags),
-                "title": tags.get("title") or tags.get("handler_name") or "",
+                "title": tags.get("title") or tags.get("name") or tags.get("handler_name") or "",
                 "codec": s.get("codec_name", ""),
                 "default": bool(s.get("disposition", {}).get("default", 0))
             })
@@ -518,7 +518,7 @@ def get_subtitle(video_id: str, track_index: int, utilisateur: dict = Depends(ve
         cmd = [
             "ffmpeg", "-y", "-headers", headers, "-i", url,
             "-map", f"0:{stream_index}",
-            "-f", "webvtt", tmp_path
+            "-c:s", "webvtt", "-f", "webvtt", tmp_path
         ]
         subprocess.run(cmd, check=True, timeout=120)
         with open(tmp_path, "r", encoding="utf-8") as f:
