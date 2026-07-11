@@ -1,0 +1,9 @@
+{
+  "appId": "com.danatrap.stream",
+  "appName": "DanaTrap Stream",
+  "webDir": "www",
+  "server": {
+    "url": "https://danatrap-stream-backend-0ev0.onrender.com",
+    "cleartext": false
+  }
+}

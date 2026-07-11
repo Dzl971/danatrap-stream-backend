@@ -536,7 +536,7 @@ input { outline: none; }
   <sc-if value="{{ isPlayer }}" hint-placeholder-val="{{ false }}">
     <div ref="{{ playerWrapRef }}" onMouseMove="{{ wakeControls }}" style="position:fixed;inset:0;z-index:50;background:#000000;display:flex;align-items:center;justify-content:center">
       <sc-if value="{{ videoUrl }}" hint-placeholder-val="{{ false }}">
-        <div style="width:100%;height:100%">{{ videoEl }}</div>
+        <div style="width:100%;height:100%;position:relative">{{ videoEl }}{{ audioEl }}</div>
       </sc-if>
 
       <sc-if value="{{ videoLoading }}" hint-placeholder-val="{{ false }}">
@@ -604,6 +604,20 @@ input { outline: none; }
             </div>
           </div>
           <div style="font-size:13px;font-weight:600;letter-spacing:1px;color:#C8C0DC;font-variant-numeric:tabular-nums">{{ timeLabel }}</div>
+          <sc-if value="{{ hasAudioTracks }}" hint-placeholder-val="{{ false }}">
+            <select value="{{ currentAudioTrack }}" onChange="{{ setAudioTrack }}" style="background:rgba(20,17,30,0.8);border:1px solid #2A2438;border-radius:6px;padding:6px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:1px;color:#EDEAF4;cursor:pointer;outline:none;max-width:140px">
+              <sc-for list="{{ audioOptions }}" as="opt" hint-placeholder-count="0">
+                <option value="{{ opt.value }}">{{ opt.label }}</option>
+              </sc-for>
+            </select>
+          </sc-if>
+          <sc-if value="{{ hasSubtitleTracks }}" hint-placeholder-val="{{ false }}">
+            <select value="{{ currentSubtitleTrack }}" onChange="{{ setSubtitleTrack }}" style="background:rgba(20,17,30,0.8);border:1px solid #2A2438;border-radius:6px;padding:6px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:1px;color:#EDEAF4;cursor:pointer;outline:none;max-width:160px">
+              <sc-for list="{{ subtitleOptions }}" as="opt" hint-placeholder-count="0">
+                <option value="{{ opt.value }}">{{ opt.label }}</option>
+              </sc-for>
+            </select>
+          </sc-if>
           <div style="flex:1"></div>
           <button onClick="{{ toggleFullscreen }}" style="background:transparent;border:none;cursor:pointer;padding:4px;display:flex;align-items:center">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="#FFFFFF" stroke-width="2"><polyline points="2,7 2,2 7,2"></polyline><polyline points="13,2 18,2 18,7"></polyline><polyline points="18,13 18,18 13,18"></polyline><polyline points="7,18 2,18 2,13"></polyline></svg>
@@ -624,6 +638,7 @@ class Component extends DCLogic {
     posters: {},
     show: null, showKind: '',
     playingTitle: '', videoUrl: null, videoLoading: false, videoError: '',
+    currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1,
     returnView: 'library',
     playing: false, currentTime: 0, duration: 0, volume: 1, muted: false,
     controlsVisible: true,
@@ -958,31 +973,96 @@ class Component extends DCLogic {
       videoUrl: url, videoLoading: true, videoError: '',
       playing: false, currentTime: 0, duration: 0, controlsVisible: true,
       epPos: null,
+      currentVideoId: videoId, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1,
     }, () => {
       const v = this._video;
       if (v && v.getAttribute('src') !== url) { v.src = url; }
       if (v) v.play().catch(() => {});
+      this._loadTracks(videoId);
     });
   };
 
   exitPlayer = () => {
     const back = this.state.returnView === 'detail' && this.state.show ? 'detail' : 'library';
     this._abortVideo();
-    this.setState({ view: back, videoUrl: null, videoLoading: false, videoError: '', playing: false });
+    this.setState({ view: back, videoUrl: null, videoLoading: false, videoError: '', playing: false, currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1 });
   };
 
   // ---- player wiring ----
+  audioRef = (el) => { this._audio = el; };
+
+  _syncAudioToVideo = () => {
+    const v = this._video; const a = this._audio;
+    if (!v || !a) return;
+    if (Math.abs(a.currentTime - v.currentTime) > 0.2) a.currentTime = v.currentTime;
+    a.playbackRate = v.playbackRate;
+    a.muted = v.muted;
+    a.volume = v.volume;
+  };
+
+  _loadTracks = async (videoId) => {
+    try {
+      const res = await this.authFetch('/tracks/' + encodeURIComponent(videoId));
+      if (!res.ok) return;
+      const data = await res.json();
+      this.setState({
+        audioTracks: Array.isArray(data.audio) ? data.audio : [],
+        subtitleTracks: Array.isArray(data.subtitles) ? data.subtitles : [],
+      });
+    } catch (e) {}
+  };
+
+  _setAudioTrack = (indexStr) => {
+    const index = parseInt(indexStr, 10);
+    this.setState({ currentAudioTrack: index });
+    const a = this._audio; const v = this._video;
+    if (index < 0) {
+      if (a) { a.pause(); a.src = ''; }
+      if (v) { v.muted = false; }
+      return;
+    }
+    if (!this.state.currentVideoId) return;
+    const url = this.api + '/audio/' + encodeURIComponent(this.state.currentVideoId) + '/' + index + '?token=' + encodeURIComponent(this.state.token);
+    if (a) {
+      a.src = url;
+      a.load();
+      a.currentTime = v ? v.currentTime : 0;
+      if (v && !v.paused) a.play().catch(() => {});
+    }
+    if (v) v.muted = true;
+  };
+
+  _setSubtitleTrack = (indexStr) => {
+    const index = parseInt(indexStr, 10);
+    this.setState({ currentSubtitleTrack: index });
+    const v = this._video;
+    if (!v) return;
+    Array.from(v.textTracks || []).forEach((t, i) => { t.mode = i === index ? 'showing' : 'hidden'; });
+  };
+
   videoRef = (el) => {
     if (el && el !== this._video) {
       this._video = el;
       el.volume = this.state.volume;
       el.muted = this.state.muted;
-      el.addEventListener('timeupdate', () => this.setState({ currentTime: el.currentTime }));
+      el.addEventListener('timeupdate', () => {
+        this.setState({ currentTime: el.currentTime });
+        this._syncAudioToVideo();
+      });
       el.addEventListener('loadedmetadata', () => this.setState({ duration: el.duration || 0 }));
       el.addEventListener('canplay', () => this.setState({ videoLoading: false }));
       el.addEventListener('error', () => this.setState({ videoLoading: false, videoError: 'Lecture impossible — le flux vidéo a renvoyé une erreur.' }));
-      el.addEventListener('play', () => { this.setState({ playing: true }); this._scheduleHide(); });
-      el.addEventListener('pause', () => this.setState({ playing: false, controlsVisible: true }));
+      el.addEventListener('play', () => {
+        this.setState({ playing: true });
+        this._scheduleHide();
+        if (this._audio && this.state.currentAudioTrack >= 0) this._audio.play().catch(() => {});
+      });
+      el.addEventListener('pause', () => {
+        this.setState({ playing: false, controlsVisible: true });
+        if (this._audio) this._audio.pause();
+      });
+      el.addEventListener('seeked', () => { if (this._audio) this._audio.currentTime = el.currentTime; });
+      el.addEventListener('ratechange', this._syncAudioToVideo);
       el.addEventListener('ended', () => this.setState({ playing: false, controlsVisible: true }));
       el.play().catch(() => {});
     }
@@ -1349,6 +1429,13 @@ class Component extends DCLogic {
       videoEl: s.videoUrl ? React.createElement('video', {
         ref: this.videoRef, src: s.videoUrl, onClick: this.togglePlay, playsInline: true,
         style: { width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' },
+      }, s.subtitleTracks.map((t, i) => React.createElement('track', {
+        key: 'sub-' + i, kind: 'subtitles', src: t.src, srclang: t.language || 'und',
+        label: t.label || ('Piste ' + (i + 1)), default: i === s.currentSubtitleTrack,
+      }))) : null,
+      audioEl: (s.videoUrl && s.currentAudioTrack >= 0) ? React.createElement('audio', {
+        ref: this.audioRef, autoPlay: false,
+        style: { position: 'absolute', left: 0, top: 0, width: 0, height: 0, opacity: 0, pointerEvents: 'none' },
       }) : null,
       detailSeasons: detailSeasons,
 
@@ -1363,6 +1450,19 @@ class Component extends DCLogic {
       seekDown: this.seekDown, volumeDown: this.volumeDown,
       toggleMute: this.toggleMute, toggleFullscreen: this.toggleFullscreen,
       wakeControls: this.wakeControls,
+      audioTracks: s.audioTracks.map((t, i) => Object.assign({}, t, { label: t.title || ('Audio ' + (i + 1)) })),
+      subtitleTracks: s.subtitleTracks.map((t, i) => Object.assign({}, t, {
+        label: t.title || ('Sous-titre ' + (i + 1)),
+        src: s.currentVideoId ? (this.api + '/subtitle/' + encodeURIComponent(s.currentVideoId) + '/' + i + '?token=' + encodeURIComponent(s.token)) : ''
+      })),
+      currentAudioTrack: String(s.currentAudioTrack),
+      currentSubtitleTrack: String(s.currentSubtitleTrack),
+      setAudioTrack: (e) => this._setAudioTrack(e.target.value),
+      setSubtitleTrack: (e) => this._setSubtitleTrack(e.target.value),
+      audioOptions: [{ value: '-1', label: 'Audio original' }].concat(s.audioTracks.map((t, i) => ({ value: String(i), label: t.title || ('Audio ' + (i + 1)) }))),
+      subtitleOptions: [{ value: '-1', label: 'Aucun sous-titre' }].concat(s.subtitleTracks.map((t, i) => ({ value: String(i), label: t.title || ('Sous-titre ' + (i + 1)) }))),
+      hasAudioTracks: s.audioTracks.length > 0,
+      hasSubtitleTracks: s.subtitleTracks.length > 0,
       progressPct: pct.toFixed(2) + '%',
       volumePct: (s.muted ? 0 : s.volume * 100).toFixed(0) + '%',
       volIconColor: '#FFFFFF',

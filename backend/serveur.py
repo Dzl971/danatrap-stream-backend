@@ -18,6 +18,8 @@ import base64
 import io
 import requests
 import pathlib
+import subprocess
+import tempfile
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
@@ -435,6 +437,137 @@ def stream_video(
 @app.get("/api/health")
 def health():
     return {"status": "ok", "drive_configured": CREDENTIALS is not None}
+
+
+
+# ==================== PISTES AUDIO / SOUS-TITRES ====================
+def _get_drive_media_url(video_id: str) -> str:
+    return f"https://www.googleapis.com/drive/v3/files/{video_id}?alt=media"
+
+def _get_drive_auth_header() -> str:
+    access_token = get_access_token()
+    return f"Authorization: Bearer {access_token}"
+
+def _executer_ffprobe(video_id: str, stream_type: str) -> list:
+    url = _get_drive_media_url(video_id)
+    headers = _get_drive_auth_header()
+    cmd = [
+        "ffprobe", "-headers", headers, "-v", "error",
+        "-select_streams", stream_type,
+        "-show_entries", "stream=index,codec_name,codec_type,disposition:stream_tags=language,title,handler_name",
+        "-of", "json", url
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            print(f"ffprobe error ({stream_type}): {result.stderr[:500]}")
+            return []
+        data = json.loads(result.stdout)
+        return data.get("streams", [])
+    except Exception as e:
+        print(f"ffprobe exception ({stream_type}): {e}")
+        return []
+
+def _normaliser_langue(tags: dict) -> str:
+    for key in ("language", "LANGUAGE", "lang", "LANG"):
+        if key in tags and tags[key]:
+            return tags[key]
+    return "inconnu"
+
+@app.get("/tracks/{video_id}")
+def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
+    try:
+        audio_streams = _executer_ffprobe(video_id, "a")
+        subtitle_streams = _executer_ffprobe(video_id, "s")
+        audio = []
+        for i, s in enumerate(audio_streams):
+            tags = s.get("tags", {})
+            audio.append({
+                "index": i,
+                "stream_index": s.get("index"),
+                "language": _normaliser_langue(tags),
+                "title": tags.get("title") or tags.get("handler_name") or "",
+                "codec": s.get("codec_name", ""),
+                "default": bool(s.get("disposition", {}).get("default", 0))
+            })
+        subtitles = []
+        for i, s in enumerate(subtitle_streams):
+            tags = s.get("tags", {})
+            subtitles.append({
+                "index": i,
+                "stream_index": s.get("index"),
+                "language": _normaliser_langue(tags),
+                "title": tags.get("title") or tags.get("handler_name") or "",
+                "codec": s.get("codec_name", ""),
+                "default": bool(s.get("disposition", {}).get("default", 0))
+            })
+        return {"audio": audio, "subtitles": subtitles}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur analyse des pistes: {e}")
+
+@app.get("/subtitle/{video_id}/{track_index}")
+def get_subtitle(video_id: str, track_index: int, utilisateur: dict = Depends(verifier_token)):
+    try:
+        url = _get_drive_media_url(video_id)
+        headers = _get_drive_auth_header()
+        subtitle_streams = _executer_ffprobe(video_id, "s")
+        if track_index < 0 or track_index >= len(subtitle_streams):
+            raise HTTPException(status_code=400, detail="Index de sous-titre invalide")
+        stream_index = subtitle_streams[track_index].get("index")
+        tmp_path = tempfile.mktemp(suffix=".vtt")
+        cmd = [
+            "ffmpeg", "-y", "-headers", headers, "-i", url,
+            "-map", f"0:{stream_index}",
+            "-f", "webvtt", tmp_path
+        ]
+        subprocess.run(cmd, check=True, timeout=120)
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            data = f.read()
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        return StreamingResponse(iter([data.encode("utf-8")]), media_type="text/vtt")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {e}")
+
+@app.get("/audio/{video_id}/{track_index}")
+def get_audio(video_id: str, track_index: int, utilisateur: dict = Depends(verifier_token)):
+    try:
+        url = _get_drive_media_url(video_id)
+        headers = _get_drive_auth_header()
+        audio_streams = _executer_ffprobe(video_id, "a")
+        if track_index < 0 or track_index >= len(audio_streams):
+            raise HTTPException(status_code=400, detail="Index audio invalide")
+        stream_index = audio_streams[track_index].get("index")
+        process = subprocess.Popen(
+            [
+                "ffmpeg", "-headers", headers, "-i", url,
+                "-map", f"0:{stream_index}",
+                "-c:a", "aac", "-b:a", "192k",
+                "-f", "adts", "pipe:1"
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL
+        )
+        def generate():
+            try:
+                while True:
+                    chunk = process.stdout.read(65536)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except Exception:
+                    process.kill()
+        return StreamingResponse(generate(), media_type="audio/aac")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur extraction audio: {e}")
 
 # ==================== FRONTEND STATIQUE (DOIT ETRE EN DERNIER !) ====================
 _FRONTEND_DIR = (pathlib.Path(__file__).parent.parent / "frontend").resolve()

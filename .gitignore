@@ -41,3 +41,10 @@ builder-effective-config.yaml
 Thumbs.db
 desktop-app/.thumbnail
 frontend/.thumbnail
+
+# Android / backup files
+android-app/node_modules/
+android-app/android/
+*.bak
+*.bak2
+
