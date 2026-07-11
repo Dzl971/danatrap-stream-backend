@@ -578,30 +578,30 @@ def get_audio(video_id: str, track_index: int, request: Request, token: Optional
         if track_index < 0 or track_index >= len(audio_streams):
             raise HTTPException(status_code=400, detail="Index audio invalide")
         stream_index = audio_streams[track_index].get("index")
-        process = subprocess.Popen(
-            [
-                "ffmpeg", "-headers", headers, "-i", url,
-                "-map", f"0:{stream_index}",
-                "-c:a", "aac", "-b:a", "192k",
-                "-f", "adts", "pipe:1"
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL
-        )
+        # Serve AAC inside a fragmented MP4 container for maximum browser/WebView compatibility
+        tmp_path = tempfile.mktemp(suffix=".m4a")
+        cmd = [
+            "ffmpeg", "-y", "-headers", headers, "-i", url,
+            "-map", f"0:{stream_index}",
+            "-c:a", "aac", "-b:a", "192k",
+            "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
+            tmp_path
+        ]
+        subprocess.run(cmd, check=True, timeout=120)
         def generate():
             try:
-                while True:
-                    chunk = process.stdout.read(65536)
-                    if not chunk:
-                        break
-                    yield chunk
+                with open(tmp_path, "rb") as f:
+                    while True:
+                        chunk = f.read(65536)
+                        if not chunk:
+                            break
+                        yield chunk
             finally:
-                process.terminate()
                 try:
-                    process.wait(timeout=5)
+                    os.unlink(tmp_path)
                 except Exception:
-                    process.kill()
-        return StreamingResponse(generate(), media_type="audio/aac")
+                    pass
+        return StreamingResponse(generate(), media_type="audio/mp4")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur extraction audio: {e}")
 
