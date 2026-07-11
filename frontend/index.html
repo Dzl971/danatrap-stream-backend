@@ -1012,8 +1012,12 @@ class Component extends DCLogic {
     if (!v || !a) return;
     if (Math.abs(a.currentTime - v.currentTime) > 0.2) a.currentTime = v.currentTime;
     a.playbackRate = v.playbackRate;
-    a.muted = v.muted;
     a.volume = v.volume;
+    if (this.state.currentAudioTrack < 0) {
+      a.muted = v.muted;
+    } else {
+      a.muted = false;
+    }
   };
 
   _onAudioCanPlay = () => {
@@ -1057,19 +1061,23 @@ class Component extends DCLogic {
     if (!this.state.currentVideoId) return;
     const url = this.api + '/audio/' + encodeURIComponent(this.state.currentVideoId) + '/' + index + '?token=' + encodeURIComponent(this.state.token);
     if (a) {
+      a.muted = false;
       a.src = url;
       a.load();
       if (v) {
+        v.muted = true;
         a.currentTime = v.currentTime;
         if (!v.paused) {
-          a.play().catch((err) => {
-            // Retry playback after a short delay if the audio isn't ready yet
-            setTimeout(() => { if (!v.paused) a.play().catch(() => {}); }, 300);
+          a.play().catch(function(err) {
+            console.warn('[DanaTrap] audio play failed, retrying:', err);
+            setTimeout(function() { if (v && !v.paused) a.play().catch(function(){}); }, 300);
+            setTimeout(function() { if (v && !v.paused) a.play().catch(function(){}); }, 800);
           });
         }
       }
+    } else {
+      console.error('[DanaTrap] audio element not found');
     }
-    if (v) v.muted = true;
   };
 
   _setSubtitleTrack = (indexStr) => {
@@ -1082,36 +1090,41 @@ class Component extends DCLogic {
 
   _applySubtitles = (v, index) => {
     if (!v) return;
-    const tracks = v.textTracks || [];
-    for (let i = 0; i < tracks.length; i++) {
-      tracks[i].mode = i === index ? 'showing' : 'hidden';
-    }
-    const trackEls = v.querySelectorAll('track');
-    trackEls.forEach((el, i) => {
-      const apply = () => {
-        const tt = v.textTracks;
-        if (tt && tt[i]) tt[i].mode = i === index ? 'showing' : 'hidden';
-      };
-      if (el.readyState >= 2) {
-        apply();
-      } else {
-        el.addEventListener('load', apply, { once: true });
-        el.addEventListener('error', () => { console.error('track load error', el.src); }, { once: true });
+    v.querySelectorAll('track').forEach(function(el) { el.remove(); });
+    if (index < 0) return;
+    var tracks = this.state.subtitleTracks;
+    if (!tracks || index >= tracks.length) return;
+    var t = tracks[index];
+    if (!t || !t.src) return;
+    var trackEl = document.createElement('track');
+    trackEl.kind = 'subtitles';
+    trackEl.src = t.src;
+    trackEl.srclang = t.language || 'und';
+    trackEl.label = t.title || ('Piste ' + (index + 1));
+    trackEl.default = true;
+    v.appendChild(trackEl);
+    trackEl.mode = 'hidden';
+    var showTrack = function() {
+      var tt = v.textTracks;
+      for (var i = 0; i < tt.length; i++) {
+        tt[i].mode = 'disabled';
       }
-    });
-    // Retry several times until the textTracks list is populated
-    if (tracks.length === 0 && index >= 0) {
-      let attempts = 0;
-      const retry = () => {
-        attempts++;
-        if (attempts > 10) return;
-        this._applySubtitles(v, this.state.currentSubtitleTrack);
-        if ((v.textTracks || []).length === 0 && this.state.currentSubtitleTrack >= 0) {
-          setTimeout(retry, 300);
-        }
-      };
-      setTimeout(retry, 100);
+      var lastIdx = v.querySelectorAll('track').length - 1;
+      if (tt[lastIdx]) tt[lastIdx].mode = 'showing';
+    };
+    if (trackEl.readyState >= 2) {
+      showTrack();
+    } else {
+      trackEl.addEventListener('load', showTrack, { once: true });
+      trackEl.addEventListener('error', function() {
+        console.error('[DanaTrap] track load error:', trackEl.src);
+        setTimeout(function() {
+          trackEl.src = t.src + (t.src.indexOf('?') >= 0 ? '&' : '?') + 'retry=1';
+          trackEl.addEventListener('load', showTrack, { once: true });
+        }, 500);
+      }, { once: true });
     }
+    setTimeout(showTrack, 1000);
   };
 
   videoRef = (el) => {
@@ -1504,10 +1517,7 @@ class Component extends DCLogic {
       videoEl: s.videoUrl ? React.createElement('video', {
         ref: this.videoRef, src: s.videoUrl, onClick: this.togglePlay, playsInline: true, crossOrigin: 'anonymous',
         style: { width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' },
-      }, s.subtitleTracks.map((t, i) => React.createElement('track', {
-        key: 'sub-' + i, kind: 'subtitles', src: t.src, srclang: t.language || 'und',
-        label: t.label || ('Piste ' + (i + 1)),
-      }))) : null,
+      }) : null,
       audioEl: s.videoUrl ? React.createElement('audio', {
         ref: this.audioRef, autoPlay: false, preload: s.currentAudioTrack >= 0 ? 'auto' : 'none',
         onCanPlay: this._onAudioCanPlay,

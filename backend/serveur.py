@@ -562,7 +562,11 @@ def get_subtitle(video_id: str, track_index: int, request: Request, token: Optio
             os.unlink(tmp_path)
         except Exception:
             pass
-        return StreamingResponse(iter([data.encode("utf-8")]), media_type="text/vtt")
+        resp = StreamingResponse(iter([data.encode("utf-8")]), media_type="text/vtt; charset=utf-8")
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        return resp
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {e}")
     except Exception as e:
@@ -606,7 +610,11 @@ def get_audio(video_id: str, track_index: int, request: Request, token: Optional
                     process.wait(timeout=5)
                 except Exception:
                     process.kill()
-        return StreamingResponse(generate(), media_type="audio/mp4")
+        resp = StreamingResponse(generate(), media_type="audio/mp4")
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        return resp
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur extraction audio: {e}")
 
