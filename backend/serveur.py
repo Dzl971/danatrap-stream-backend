@@ -20,6 +20,9 @@ import requests
 import pathlib
 import subprocess
 import tempfile
+import threading
+import time
+import shutil
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
@@ -468,6 +471,63 @@ def _executer_ffprobe(video_id: str, stream_type: str) -> list:
         print(f"ffprobe exception ({stream_type}): {e}")
         return []
 
+
+# ==================== CACHE AUDIO ====================
+AUDIO_CACHE_DIR = pathlib.Path(tempfile.gettempdir()) / "danatrap_audio"
+AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_audio_cache_locks: dict = {}
+
+def _audio_cache_paths(video_id: str, track_index: int):
+    base = AUDIO_CACHE_DIR / f"{video_id}_{track_index}"
+    return base.with_suffix(".mp4"), pathlib.Path(str(base) + ".part"), pathlib.Path(str(base) + ".done")
+
+def _is_audio_cached(video_id: str, track_index: int) -> bool:
+    cache_path, _, done_path = _audio_cache_paths(video_id, track_index)
+    return cache_path.exists() and cache_path.stat().st_size > 0 and done_path.exists()
+
+def _get_cache_lock(video_id: str, track_index: int) -> threading.Lock:
+    key = f"{video_id}_{track_index}"
+    if key not in _audio_cache_locks:
+        _audio_cache_locks[key] = threading.Lock()
+    return _audio_cache_locks[key]
+
+def _extract_audio_to_cache(video_id: str, track_index: int, stream_index: int, codec: str):
+    """Extrait une piste audio depuis Drive vers le cache local (thread-safe)."""
+    lock = _get_cache_lock(video_id, track_index)
+    if not lock.acquire(blocking=False):
+        return
+    try:
+        if _is_audio_cached(video_id, track_index):
+            return
+        cache_path, part_path, done_path = _audio_cache_paths(video_id, track_index)
+        part_path.parent.mkdir(parents=True, exist_ok=True)
+        codec_args = ["-c:a", "copy"] if codec in ("aac",) else ["-c:a", "aac", "-b:a", "192k"]
+        cmd = [
+            "ffmpeg", "-y", "-headers", _get_drive_auth_header(),
+            "-i", _get_drive_media_url(video_id),
+            "-map", f"0:{stream_index}",
+            *codec_args,
+            "-f", "mp4", "-movflags", "faststart",
+            str(part_path)
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
+        shutil.move(str(part_path), str(cache_path))
+        done_path.touch()
+        print(f"[DanaTrap] audio cached: {video_id}/{track_index} ({cache_path.stat().st_size} bytes)")
+    except Exception as e:
+        print(f"[DanaTrap] audio cache extraction failed {video_id}/{track_index}: {e}")
+        try:
+            cache_path, part_path, done_path = _audio_cache_paths(video_id, track_index)
+            if part_path.exists():
+                part_path.unlink()
+            if done_path.exists() and not cache_path.exists():
+                done_path.unlink()
+        except Exception:
+            pass
+    finally:
+        lock.release()
+
+
 def _normaliser_langue(tags: dict) -> str:
     for key in ("language", "LANGUAGE", "lang", "LANG"):
         if key in tags and tags[key]:
@@ -516,6 +576,14 @@ def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
                 "codec": s.get("codec_name", ""),
                 "default": bool(s.get("disposition", {}).get("default", 0))
             })
+        # Pre-warm audio cache in background so switching tracks is fast
+        for i, s in enumerate(audio_streams):
+            if not _is_audio_cached(video_id, i):
+                threading.Thread(
+                    target=_extract_audio_to_cache,
+                    args=(video_id, i, s.get("index"), s.get("codec_name", "")),
+                    daemon=True
+                ).start()
         return {"audio": audio, "subtitles": subtitles}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur analyse des pistes: {e}")
@@ -583,21 +651,41 @@ def get_audio(video_id: str, track_index: int, request: Request, token: Optional
             raise HTTPException(status_code=400, detail="Index audio invalide")
         stream_index = audio_streams[track_index].get("index")
         codec = audio_streams[track_index].get("codec_name", "")
-        # Stream AAC inside a fragmented MP4 container directly to stdout (no temp file)
-        # Use copy if already AAC, otherwise transcode
-        codec_args = ["-c:a", "copy"] if codec in ("aac",) else ["-c:a", "aac", "-b:a", "192k"]
         seek_args = ["-ss", str(start)] if start is not None else []
-        process = subprocess.Popen(
-            [
-                "ffmpeg", "-y", "-headers", headers, *seek_args, "-i", url,
-                "-map", f"0:{stream_index}",
-                *codec_args,
-                "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
-                "pipe:1"
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL
-        )
+        cached = _is_audio_cached(video_id, track_index)
+        if cached:
+            # Serve from local cache: near-instant track switching
+            cache_path, _, _ = _audio_cache_paths(video_id, track_index)
+            process = subprocess.Popen(
+                [
+                    "ffmpeg", "-y", "-i", str(cache_path),
+                    "-c:a", "copy",
+                    *seek_args,
+                    "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
+                    "pipe:1"
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+            )
+        else:
+            # Start warming cache for next time while streaming from Drive now
+            threading.Thread(
+                target=_extract_audio_to_cache,
+                args=(video_id, track_index, stream_index, codec),
+                daemon=True
+            ).start()
+            codec_args = ["-c:a", "copy"] if codec in ("aac",) else ["-c:a", "aac", "-b:a", "192k"]
+            process = subprocess.Popen(
+                [
+                    "ffmpeg", "-y", "-headers", headers, *seek_args, "-i", url,
+                    "-map", f"0:{stream_index}",
+                    *codec_args,
+                    "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
+                    "pipe:1"
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL
+            )
         def generate():
             try:
                 while True:
@@ -618,6 +706,8 @@ def get_audio(video_id: str, track_index: int, request: Request, token: Optional
         return resp
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur extraction audio: {e}")
+
+
 
 # ==================== FRONTEND STATIQUE (DOIT ETRE EN DERNIER !) ====================
 _FRONTEND_DIR = (pathlib.Path(__file__).parent.parent / "frontend").resolve()
