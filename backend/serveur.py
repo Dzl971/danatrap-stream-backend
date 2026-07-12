@@ -631,7 +631,11 @@ if (_FRONTEND_DIR / "index.html").exists():
 
     @app.get("/", include_in_schema=False)
     def _serve_index():
-        return FileResponse(str(_FRONTEND_DIR / "index.html"), media_type="text/html")
+        resp = FileResponse(str(_FRONTEND_DIR / "index.html"), media_type="text/html")
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
     @app.get("/{filename:path}", include_in_schema=False)
     def _serve_static(filename: str):
