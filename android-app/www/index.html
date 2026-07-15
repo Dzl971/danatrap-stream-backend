@@ -533,6 +533,80 @@ input { outline: none; }
     </sc-for>
   </div>
 
+  <!-- ============ PRÉPARATION AVANT LECTURE ============ -->
+  <sc-if value="{{ playerSetupOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:90;background:rgba(8,6,13,0.88);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:22px" onClick="{{ cancelPlayerSetup }}">
+      <div style="width:560px;max-width:94vw;max-height:90vh;overflow:auto;padding:30px;border-radius:16px;background:linear-gradient(145deg,#171321,#100D18);border:1px solid #342B48;box-shadow:0 28px 90px rgba(0,0,0,0.78),0 0 45px rgba(255,0,110,0.13);display:flex;flex-direction:column;gap:22px" onClick="{{ stopClick }}">
+        <div style="display:flex;align-items:flex-start;gap:16px">
+          <div style="width:46px;height:46px;border-radius:12px;flex:0 0 auto;background:linear-gradient(135deg,rgba(255,0,110,0.22),rgba(0,240,255,0.16));border:1px solid #3A304E;display:flex;align-items:center;justify-content:center">
+            <svg width="22" height="22" viewBox="0 0 24 24"><polygon points="8,5 20,12 8,19" fill="#FF4D94"></polygon></svg>
+          </div>
+          <div style="min-width:0;flex:1">
+            <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase">Préparer la lecture</div>
+            <div style="margin-top:5px;font-size:15px;font-weight:600;color:#B8AFCB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ setupTitle }}</div>
+          </div>
+        </div>
+
+        <sc-if value="{{ setupLoading }}" hint-placeholder-val="{{ false }}">
+          <div style="min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px;border-radius:12px;background:rgba(8,6,13,0.46);border:1px solid #282137">
+            <div style="width:38px;height:38px;border-radius:50%;border:3px solid #312942;border-top-color:#00F0FF;animation:spin 0.85s linear infinite"></div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;letter-spacing:2px;color:#EDEAF4;text-transform:uppercase">Analyse des langues et sous-titres…</div>
+            <div style="font-size:13px;color:#7F7694;text-align:center;padding:0 20px">Les pistes sont détectées avant le démarrage du lecteur.</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ setupHasError }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:15px;padding:18px;border-radius:10px;background:rgba(255,45,85,0.08);border:1px solid rgba(255,77,148,0.45)">
+            <div style="font-size:14px;line-height:1.55;color:#FF91B7">{{ setupError }}</div>
+            <button onClick="{{ retryPlayerSetup }}" style="align-self:flex-start;background:transparent;border:1px solid #FF4D94;border-radius:6px;padding:9px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:2px;color:#FF4D94;text-transform:uppercase;cursor:pointer">Réessayer</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ setupReady }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:18px">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <label style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#00F0FF;text-transform:uppercase">Langue audio</label>
+              <select value="{{ setupAudioTrack }}" onChange="{{ onSetupAudioTrack }}" style="width:100%;background:#0D0B14;border:1px solid #3A304E;border-radius:8px;padding:13px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:1px;color:#FFFFFF;cursor:pointer;outline:none">
+                <sc-for list="{{ setupAudioOptions }}" as="opt" hint-placeholder-count="0">
+                  <option value="{{ opt.value }}">{{ opt.label }}</option>
+                </sc-for>
+              </select>
+              <div style="font-size:12px;line-height:1.45;color:#766D8B">La piste choisie sera intégrée au flux vidéo dès son lancement.</div>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <label style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#FF4D94;text-transform:uppercase">Sous-titres</label>
+              <select value="{{ setupSubtitleTrack }}" onChange="{{ onSetupSubtitleTrack }}" style="width:100%;background:#0D0B14;border:1px solid #3A304E;border-radius:8px;padding:13px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:1px;color:#FFFFFF;cursor:pointer;outline:none">
+                <sc-for list="{{ setupSubtitleOptions }}" as="opt" hint-placeholder-count="0">
+                  <option value="{{ opt.value }}">{{ opt.label }}</option>
+                </sc-for>
+              </select>
+              <sc-if value="{{ setupSubtitleLoading }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:9px;font-size:12px;color:#00F0FF"><div style="width:12px;height:12px;border-radius:50%;border:2px solid #2A2438;border-top-color:#00F0FF;animation:spin 0.8s linear infinite"></div>Préparation des sous-titres…</div>
+              </sc-if>
+              <sc-if value="{{ setupSubtitleReady }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:12px;color:#68F5C0">✓ Sous-titres prêts avant la lecture.</div>
+              </sc-if>
+              <sc-if value="{{ setupSubtitleHasError }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:12px;line-height:1.45;color:#FF769F">{{ setupSubtitleError }}</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="display:flex;gap:12px;justify-content:flex-end;padding-top:2px">
+          <button onClick="{{ cancelPlayerSetup }}" style="background:transparent;border:1px solid #3A304E;border-radius:7px;padding:11px 19px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#A79DBB;text-transform:uppercase;cursor:pointer">Annuler</button>
+          <sc-if value="{{ setupCanStart }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ startPreparedPlayback }}" style="background:linear-gradient(95deg,#FF006E,#D40045);border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 22px rgba(255,0,110,0.34)">Lancer la lecture</button>
+          </sc-if>
+          <sc-if value="{{ setupCannotStart }}" hint-placeholder-val="{{ false }}">
+            <button disabled="true" style="background:#2B2536;border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#6F667F;text-transform:uppercase;cursor:not-allowed">Lancer la lecture</button>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
   <!-- ============ PLAYER ============ -->
   <sc-if value="{{ isPlayer }}" hint-placeholder-val="{{ false }}">
     <div ref="{{ playerWrapRef }}" onMouseMove="{{ wakeControls }}" style="position:fixed;inset:0;z-index:50;background:#000000;display:flex;align-items:center;justify-content:center">
@@ -644,6 +718,7 @@ class Component extends DCLogic {
     show: null, showKind: '',
     playingTitle: '', videoUrl: null, videoLoading: false, videoError: '',
     currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false,
+    playerSetupOpen: false, setupLoading: false, setupError: '', setupTitle: '', setupVideoId: null, setupReturnView: 'library', setupAudioTrack: -1, setupSubtitleTrack: -1, setupSubtitleLoading: false, setupSubtitleError: '', setupDuration: 0,
     returnView: 'library',
     playing: false, currentTime: 0, duration: 0, volume: 1, muted: false,
     controlsVisible: true,
@@ -800,7 +875,7 @@ class Component extends DCLogic {
   sessionExpired() {
     this._abortVideo();
     this._clearSaved();
-    this.setState({ view: 'login', token: null, password: '', loginError: 'Session expirée — reconnecte-toi.' });
+    this.setState({ view: 'login', playerSetupOpen: false, setupLoading: false, token: null, password: '', loginError: 'Session expirée — reconnecte-toi.' });
   }
 
   doLogin = async () => {
@@ -914,7 +989,7 @@ class Component extends DCLogic {
   doLogout = () => {
     this._abortVideo();
     this._clearSaved();
-    this.setState({ view: 'login', token: null, library: null, posters: {}, password: '', loginError: '', estAdmin: false, users: null, newUserPseudo: '', newUserPassword: '', confirmPseudo: '' });
+    this.setState({ view: 'login', playerSetupOpen: false, setupLoading: false, token: null, library: null, posters: {}, password: '', loginError: '', estAdmin: false, users: null, newUserPseudo: '', newUserPassword: '', confirmPseudo: '' });
     this._posterStarted = {}; this._posterQueue = []; this._posterActive = 0;
   };
   retryLibrary = () => this.loadLibrary();
@@ -932,6 +1007,8 @@ class Component extends DCLogic {
     this._sourceChangeId = (this._sourceChangeId || 0) + 1;
     this._seekingPreview = false;
     this._subtitleCues = null;
+    this._preparedSubtitleCues = null;
+    this._preparedSubtitleIndex = -1;
   }
 
   _stripExt = (name) => String(name || '').replace(/\.[a-z0-9]{2,4}$/i, '');
@@ -986,25 +1063,182 @@ class Component extends DCLogic {
 
   playVideo = (title, videoId, returnView) => {
     this._abortVideo();
-    // Native progressive streaming: the browser handles Range Requests itself;
-    // the token travels as a query param since <video> can't send headers.
-    const url = this.api + '/stream/' + encodeURIComponent(videoId) + '?token=' + encodeURIComponent(this.state.token);
+    this._subtitleCues = null;
+    this._preparedSubtitleCues = null;
+    this._preparedSubtitleIndex = -1;
+    this.setState({
+      playerSetupOpen: true,
+      setupLoading: true,
+      setupError: '',
+      setupTitle: title,
+      setupVideoId: videoId,
+      setupReturnView: returnView,
+      setupAudioTrack: -1,
+      setupSubtitleTrack: -1,
+      setupSubtitleLoading: false,
+      setupSubtitleError: '',
+      setupDuration: 0,
+      epPos: null,
+      currentVideoId: null,
+      audioTracks: [],
+      subtitleTracks: [],
+      currentAudioTrack: -1,
+      currentSubtitleTrack: -1,
+      subtitleText: '',
+      audioSwitching: false,
+    }, () => this._loadPlayerSetupTracks(videoId));
+  };
+
+  _loadPlayerSetupTracks = async (videoId) => {
+    if (!videoId) return;
+    this.setState({ setupLoading: true, setupError: '', setupSubtitleLoading: false, setupSubtitleError: '' });
+    this._preparedSubtitleCues = null;
+    this._preparedSubtitleIndex = -1;
+    try {
+      const res = await this.authFetch('/tracks/' + encodeURIComponent(videoId));
+      if (res.status === 401) return this.sessionExpired();
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch (e) {}
+        throw new Error(detail || ('Erreur ' + res.status));
+      }
+      const data = await res.json();
+      if (!this.state.playerSetupOpen || this.state.setupVideoId !== videoId) return;
+      const token = this.state.token;
+      const subs = (Array.isArray(data.subtitles) ? data.subtitles : []).map((t, i) => Object.assign({}, t, {
+        src: this.api + '/subtitle/' + encodeURIComponent(videoId) + '/' + i + '?token=' + encodeURIComponent(token)
+      }));
+      this.setState({
+        setupLoading: false,
+        setupError: '',
+        audioTracks: Array.isArray(data.audio) ? data.audio : [],
+        subtitleTracks: subs,
+        setupDuration: Number(data.duration) || 0,
+      });
+    } catch (e) {
+      console.error('[DanaTrap] préparation du lecteur impossible:', e);
+      if (this.state.playerSetupOpen && this.state.setupVideoId === videoId) {
+        this.setState({ setupLoading: false, setupError: 'Impossible d’analyser les pistes : ' + e.message });
+      }
+    }
+  };
+
+  retryPlayerSetup = () => {
+    if (this.state.setupVideoId) this._loadPlayerSetupTracks(this.state.setupVideoId);
+  };
+
+  cancelPlayerSetup = () => {
+    this._preparedSubtitleCues = null;
+    this._preparedSubtitleIndex = -1;
+    this.setState({
+      playerSetupOpen: false,
+      setupLoading: false,
+      setupError: '',
+      setupTitle: '',
+      setupVideoId: null,
+      setupAudioTrack: -1,
+      setupSubtitleTrack: -1,
+      setupSubtitleLoading: false,
+      setupSubtitleError: '',
+      setupDuration: 0,
+      audioTracks: [],
+      subtitleTracks: [],
+    });
+  };
+
+  onSetupAudioTrack = (e) => {
+    var index = parseInt(e.target.value, 10);
+    if (!isFinite(index)) index = -1;
+    if (index >= this.state.audioTracks.length) index = -1;
+    this.setState({ setupAudioTrack: index });
+  };
+
+  onSetupSubtitleTrack = async (e) => {
+    var index = parseInt(e.target.value, 10);
+    if (!isFinite(index)) index = -1;
+    this._preparedSubtitleCues = null;
+    this._preparedSubtitleIndex = -1;
+    this.setState({ setupSubtitleTrack: index, setupSubtitleLoading: index >= 0, setupSubtitleError: '' });
+    if (index < 0) return;
+
+    var videoId = this.state.setupVideoId;
+    var tracks = this.state.subtitleTracks;
+    if (!videoId || !tracks || index >= tracks.length || !tracks[index] || !tracks[index].src) {
+      this.setState({ setupSubtitleLoading: false, setupSubtitleError: 'Cette piste de sous-titres est indisponible.' });
+      return;
+    }
+
+    try {
+      const res = await fetch(tracks[index].src, { cache: 'no-store' });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch (err) {}
+        throw new Error(detail || ('Erreur ' + res.status));
+      }
+      const cues = this._parseVTT(await res.text());
+      if (!cues.length) throw new Error('La piste ne contient aucun sous-titre lisible');
+      if (!this.state.playerSetupOpen || this.state.setupVideoId !== videoId || this.state.setupSubtitleTrack !== index) return;
+      this._preparedSubtitleCues = cues;
+      this._preparedSubtitleIndex = index;
+      this.setState({ setupSubtitleLoading: false, setupSubtitleError: '' });
+    } catch (err) {
+      console.error('[DanaTrap] préchargement des sous-titres impossible:', err);
+      if (this.state.playerSetupOpen && this.state.setupVideoId === videoId && this.state.setupSubtitleTrack === index) {
+        this.setState({ setupSubtitleLoading: false, setupSubtitleError: 'Sous-titres indisponibles : ' + err.message });
+      }
+    }
+  };
+
+  startPreparedPlayback = () => {
+    const s = this.state;
+    if (!s.playerSetupOpen || s.setupLoading || s.setupError || s.setupSubtitleLoading || s.setupSubtitleError || !s.setupVideoId) return;
+
+    var audioIndex = parseInt(s.setupAudioTrack, 10);
+    if (!isFinite(audioIndex) || audioIndex >= s.audioTracks.length) audioIndex = -1;
+    var subtitleIndex = parseInt(s.setupSubtitleTrack, 10);
+    if (!isFinite(subtitleIndex) || subtitleIndex >= s.subtitleTracks.length) subtitleIndex = -1;
+
+    var videoId = s.setupVideoId;
+    var url = audioIndex >= 0
+      ? this._buildMuxedVideoUrl(videoId, audioIndex, 0)
+      : this._buildOriginalVideoUrl(videoId);
+
     this._videoStreamOffset = 0;
     this._pendingOriginalSeek = null;
     this._waitingOriginalSeek = false;
     this._resumeAfterSourceChange = true;
-    this._sourceKind = 'original';
+    this._sourceKind = audioIndex >= 0 ? 'mux' : 'original';
+    this._changingSource = true;
+    this._sourceChangeId = (this._sourceChangeId || 0) + 1;
+    this._subtitleCues = subtitleIndex >= 0 && this._preparedSubtitleIndex === subtitleIndex
+      ? this._preparedSubtitleCues
+      : null;
+
     this.setState({
-      view: 'player', playingTitle: title, returnView: returnView,
-      videoUrl: url, videoLoading: true, videoError: '',
-      playing: false, currentTime: 0, duration: 0, controlsVisible: true,
-      epPos: null,
-      currentVideoId: videoId, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false,
+      playerSetupOpen: false,
+      setupLoading: false,
+      setupError: '',
+      view: 'player',
+      playingTitle: s.setupTitle,
+      returnView: s.setupReturnView,
+      videoUrl: url,
+      videoLoading: true,
+      videoError: '',
+      playing: false,
+      currentTime: 0,
+      duration: s.setupDuration || 0,
+      controlsVisible: true,
+      currentVideoId: videoId,
+      currentAudioTrack: audioIndex,
+      currentSubtitleTrack: subtitleIndex,
+      subtitleText: '',
+      audioSwitching: audioIndex >= 0,
     }, () => {
       const v = this._video;
-      if (v && v.getAttribute('src') !== url) { v.src = url; }
+      if (v && v.getAttribute('src') !== url) v.src = url;
       if (v) v.play().catch(() => {});
-      this._loadTracks(videoId);
+      if (subtitleIndex >= 0 && !this._subtitleCues) this._setSubtitleTrack(String(subtitleIndex));
+      else this._updateSubtitle();
     });
   };
 
@@ -1012,7 +1246,9 @@ class Component extends DCLogic {
     const back = this.state.returnView === 'detail' && this.state.show ? 'detail' : 'library';
     this._abortVideo();
     this._subtitleCues = null;
-    this.setState({ view: back, videoUrl: null, videoLoading: false, videoError: '', playing: false, currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false });
+    this._preparedSubtitleCues = null;
+    this._preparedSubtitleIndex = -1;
+    this.setState({ view: back, playerSetupOpen: false, setupLoading: false, setupError: '', setupTitle: '', setupVideoId: null, setupAudioTrack: -1, setupSubtitleTrack: -1, setupSubtitleLoading: false, setupSubtitleError: '', setupDuration: 0, videoUrl: null, videoLoading: false, videoError: '', playing: false, currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false });
   };
 
   // ---- player wiring ----
@@ -1610,6 +1846,27 @@ class Component extends DCLogic {
       isLibrary: s.view === 'library',
       isDetail: s.view === 'detail',
       isPlayer: s.view === 'player',
+      playerSetupOpen: s.playerSetupOpen,
+      setupLoading: s.setupLoading,
+      setupError: s.setupError,
+      setupHasError: !!s.setupError && !s.setupLoading,
+      setupReady: s.playerSetupOpen && !s.setupLoading && !s.setupError,
+      setupCanStart: s.playerSetupOpen && !s.setupLoading && !s.setupError && !s.setupSubtitleLoading && !s.setupSubtitleError,
+      setupCannotStart: !s.playerSetupOpen || s.setupLoading || !!s.setupError || s.setupSubtitleLoading || !!s.setupSubtitleError,
+      setupTitle: s.setupTitle,
+      setupAudioTrack: String(s.setupAudioTrack),
+      setupSubtitleTrack: String(s.setupSubtitleTrack),
+      setupAudioOptions: [{ value: '-1', label: 'Audio original' }].concat(s.audioTracks.map((t, i) => ({ value: String(i), label: t.title || ('Audio ' + (i + 1)) }))),
+      setupSubtitleOptions: [{ value: '-1', label: 'Aucun sous-titre' }].concat(s.subtitleTracks.map((t, i) => ({ value: String(i), label: t.title || ('Sous-titre ' + (i + 1)) }))),
+      setupSubtitleLoading: s.setupSubtitleLoading,
+      setupSubtitleError: s.setupSubtitleError,
+      setupSubtitleHasError: !!s.setupSubtitleError,
+      setupSubtitleReady: s.setupSubtitleTrack >= 0 && !s.setupSubtitleLoading && !s.setupSubtitleError && this._preparedSubtitleIndex === s.setupSubtitleTrack,
+      onSetupAudioTrack: this.onSetupAudioTrack,
+      onSetupSubtitleTrack: this.onSetupSubtitleTrack,
+      startPreparedPlayback: this.startPreparedPlayback,
+      cancelPlayerSetup: this.cancelPlayerSetup,
+      retryPlayerSetup: this.retryPlayerSetup,
 
       pseudo: s.pseudo, password: s.password, loginError: s.loginError,
       loginLabel: s.loggingIn ? 'Connexion…' : 'Connexion',
@@ -1621,7 +1878,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#C8C0DC' : '#7A7290',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v3.3-audio-sync',
+      appVersion: 'v3.4-preselection',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError,
