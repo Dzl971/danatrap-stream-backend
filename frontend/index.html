@@ -921,11 +921,16 @@ class Component extends DCLogic {
 
   _abortVideo() {
     if (this._video) { try { this._video.pause(); this._video.removeAttribute('src'); this._video.load(); } catch (e) {} }
-    if (this._audio) { try { this._audio.pause(); this._audio.removeAttribute('src'); this._audio.load(); } catch (e) {} }
     if (this._hideTimer) { clearTimeout(this._hideTimer); this._hideTimer = null; }
     this._video = null;
-    this._audio = null;
-    this._audioStartOffset = 0;
+    this._videoStreamOffset = 0;
+    this._pendingOriginalSeek = null;
+    this._waitingOriginalSeek = false;
+    this._resumeAfterSourceChange = false;
+    this._sourceKind = 'original';
+    this._changingSource = false;
+    this._sourceChangeId = (this._sourceChangeId || 0) + 1;
+    this._seekingPreview = false;
     this._subtitleCues = null;
   }
 
@@ -969,14 +974,26 @@ class Component extends DCLogic {
   prevEpisode = () => { const n = this._epNeighbor(-1); if (n) this.playEpisode(n.si, n.ei); };
   nextEpisode = () => { const n = this._epNeighbor(1); if (n) this.playEpisode(n.si, n.ei); };
 
-  skipBack = () => { const v = this._video; if (v) v.currentTime = Math.max(0, v.currentTime - 10); };
-  skipForward = () => { const v = this._video; if (v) v.currentTime = Math.min(v.duration || Infinity, v.currentTime + 10); };
+  skipBack = () => {
+    const v = this._video; if (!v) return;
+    this._seekTo(Math.max(0, this._getPlaybackTime() - 10), !v.paused);
+  };
+  skipForward = () => {
+    const v = this._video; if (!v) return;
+    const maxTime = this.state.duration || Infinity;
+    this._seekTo(Math.min(maxTime, this._getPlaybackTime() + 10), !v.paused);
+  };
 
   playVideo = (title, videoId, returnView) => {
     this._abortVideo();
     // Native progressive streaming: the browser handles Range Requests itself;
     // the token travels as a query param since <video> can't send headers.
     const url = this.api + '/stream/' + encodeURIComponent(videoId) + '?token=' + encodeURIComponent(this.state.token);
+    this._videoStreamOffset = 0;
+    this._pendingOriginalSeek = null;
+    this._waitingOriginalSeek = false;
+    this._resumeAfterSourceChange = true;
+    this._sourceKind = 'original';
     this.setState({
       view: 'player', playingTitle: title, returnView: returnView,
       videoUrl: url, videoLoading: true, videoError: '',
@@ -999,78 +1016,77 @@ class Component extends DCLogic {
   };
 
   // ---- player wiring ----
-  audioRef = (el) => {
-    this._audio = el;
-    if (el) {
-      el.volume = this.state.volume;
-      el.muted = this.state.muted;
-    }
+  // Une piste audio sélectionnée est remuxée avec la vidéo côté serveur.
+  // Le navigateur ne lit donc plus deux médias séparés : image et son restent
+  // sur la même horloge, même après une pause ou une avance rapide.
+  audioRef = () => {};
+
+  _buildOriginalVideoUrl = (videoId) => {
+    return this.api + '/stream/' + encodeURIComponent(videoId) + '?token=' + encodeURIComponent(this.state.token);
   };
 
-  _buildAudioUrl = (videoId, trackIndex, startSec) => {
-    var url = this.api + '/audio/' + encodeURIComponent(videoId) + '/' + trackIndex + '?token=' + encodeURIComponent(this.state.token);
+  _buildMuxedVideoUrl = (videoId, trackIndex, startSec) => {
+    var url = this.api + '/mux/' + encodeURIComponent(videoId) + '/' + trackIndex + '?token=' + encodeURIComponent(this.state.token);
     if (startSec && startSec > 0) url += '&start=' + startSec.toFixed(3);
     return url;
   };
 
-  _stopExternalAudio = () => {
-    var a = this._audio;
-    if (!a) return;
-    this._ignoreAudioErrors = true;
+  _getPlaybackTime = () => {
+    var v = this._video;
+    var localTime = v && isFinite(v.currentTime) ? v.currentTime : 0;
+    return Math.max(0, (this.state.currentAudioTrack >= 0 ? (this._videoStreamOffset || 0) : 0) + localTime);
+  };
+
+  _finishSourceChange = () => {
+    var v = this._video;
+    if (!v || this._waitingOriginalSeek) return;
+    this._changingSource = false;
+    this.setState({ videoLoading: false, audioSwitching: false, videoError: '' });
+    if (this._resumeAfterSourceChange) v.play().catch(() => {});
+    this._resumeAfterSourceChange = false;
+  };
+
+  _setVideoSource = (url, streamOffset, autoplay, originalSeek, sourceKind) => {
+    var v = this._video;
+    this._sourceChangeId = (this._sourceChangeId || 0) + 1;
+    this._resumeAfterSourceChange = !!autoplay;
+    this._videoStreamOffset = Math.max(0, Number(streamOffset) || 0);
+    this._pendingOriginalSeek = originalSeek == null ? null : Math.max(0, Number(originalSeek) || 0);
+    this._waitingOriginalSeek = false;
+    this._sourceKind = sourceKind || 'original';
+    this._changingSource = true;
+    if (v) {
+      try { v.pause(); } catch (e) {}
+    }
+    this.setState({ videoUrl: url, videoLoading: true, audioSwitching: true, videoError: '' }, () => {
+      var el = this._video;
+      if (!el) return;
+      try {
+        if (el.getAttribute('src') !== url) el.src = url;
+        el.load();
+      } catch (e) {
+        this.setState({ videoLoading: false, audioSwitching: false, videoError: 'Impossible de charger cette piste audio.' });
+      }
+    });
+  };
+
+  _seekTo = (rawTarget, autoplay) => {
+    var v = this._video;
+    if (!v) return;
+    var maxTime = this.state.duration > 0 ? this.state.duration : Infinity;
+    var target = Math.max(0, Math.min(maxTime, Number(rawTarget) || 0));
+    this.setState({ currentTime: target });
+
+    if (this.state.currentAudioTrack >= 0 && this.state.currentVideoId) {
+      var url = this._buildMuxedVideoUrl(this.state.currentVideoId, this.state.currentAudioTrack, target);
+      this._setVideoSource(url, target, !!autoplay, null, 'mux');
+      return;
+    }
+
     try {
-      a.pause();
-      a.removeAttribute('src');
-      a.load();
+      v.currentTime = target;
+      if (autoplay) v.play().catch(() => {});
     } catch (e) {}
-    this._audioStartOffset = 0;
-    setTimeout(() => { this._ignoreAudioErrors = false; }, 0);
-  };
-
-  _loadExternalAudio = (trackIndex, startSec, autoplay) => {
-    var a = this._audio;
-    if (!a || !this.state.currentVideoId || trackIndex < 0) return;
-    this._audioStartOffset = Math.max(0, Number(startSec) || 0);
-    this._audioShouldAutoplay = !!autoplay;
-    a.pause();
-    a.volume = this.state.volume;
-    a.muted = this.state.muted;
-    a.src = this._buildAudioUrl(this.state.currentVideoId, trackIndex, this._audioStartOffset);
-    a.load();
-    if (autoplay) a.play().catch(() => {});
-  };
-
-  _syncAudioToVideo = () => {
-    var v = this._video; var a = this._audio;
-    if (!v || !a || this.state.currentAudioTrack < 0) return;
-    a.playbackRate = v.playbackRate;
-    a.volume = this.state.volume;
-    a.muted = this.state.muted;
-    // Le flux audio repart de zéro à chaque changement/seek. On corrige
-    // uniquement une dérive sensible pour éviter des micro-coupures permanentes.
-    var expected = Math.max(0, v.currentTime - (this._audioStartOffset || 0));
-    if (a.readyState >= 2 && isFinite(a.currentTime) && Math.abs(a.currentTime - expected) > 0.45) {
-      try { a.currentTime = expected; } catch (e) {}
-    }
-  };
-
-  _onAudioCanPlay = () => {
-    var v = this._video; var a = this._audio;
-    if (!v || !a || this.state.currentAudioTrack < 0) return;
-    this._syncAudioToVideo();
-    this.setState({ audioSwitching: false });
-    if (!v.paused || this._audioShouldAutoplay) {
-      a.play().catch(() => {});
-    }
-    this._audioShouldAutoplay = false;
-  };
-
-  _onAudioError = () => {
-    if (this._ignoreAudioErrors || this.state.currentAudioTrack < 0) return;
-    console.error('[DanaTrap] impossible de lire la piste audio sélectionnée');
-    this._stopExternalAudio();
-    if (this._video) this._video.muted = this.state.muted;
-    this.setState({ currentAudioTrack: -1, audioSwitching: false });
-    this.toast('Cette piste audio n’a pas pu être chargée. Audio original réactivé.', false);
   };
 
   _loadTracks = async (videoId) => {
@@ -1090,10 +1106,13 @@ class Component extends DCLogic {
           src: this.api + '/subtitle/' + encodeURIComponent(videoId) + '/' + i + '?token=' + encodeURIComponent(token)
         });
       });
-      this.setState({
+      const probedDuration = Number(data.duration) || 0;
+      const update = {
         audioTracks: Array.isArray(data.audio) ? data.audio : [],
         subtitleTracks: subs,
-      });
+      };
+      if (probedDuration > 0) update.duration = probedDuration;
+      this.setState(update);
     } catch (e) {
       console.error('[DanaTrap] chargement des pistes impossible:', e);
       if (this.state.currentVideoId === videoId) {
@@ -1105,21 +1124,25 @@ class Component extends DCLogic {
   _setAudioTrack = (indexStr) => {
     var index = parseInt(indexStr, 10);
     var v = this._video;
-    if (!isFinite(index)) return;
+    if (!isFinite(index) || !v || !this.state.currentVideoId) return;
+    if (index >= this.state.audioTracks.length) return;
+    if (index === this.state.currentAudioTrack) return;
+
+    var target = this._getPlaybackTime();
+    var shouldPlay = !v.paused;
+    try { v.pause(); } catch (e) {}
 
     if (index < 0) {
-      this._stopExternalAudio();
-      if (v) v.muted = this.state.muted;
-      this.setState({ currentAudioTrack: -1, audioSwitching: false });
+      var originalUrl = this._buildOriginalVideoUrl(this.state.currentVideoId);
+      this.setState({ currentAudioTrack: -1, audioSwitching: true }, () => {
+        this._setVideoSource(originalUrl, 0, shouldPlay, target, 'original');
+      });
       return;
     }
-    if (!this.state.currentVideoId || index >= this.state.audioTracks.length) return;
 
-    var startSec = v ? v.currentTime : 0;
-    var shouldPlay = !!(v && !v.paused);
+    var muxedUrl = this._buildMuxedVideoUrl(this.state.currentVideoId, index, target);
     this.setState({ currentAudioTrack: index, audioSwitching: true }, () => {
-      if (v) v.muted = true; // coupe toujours la piste intégrée
-      this._loadExternalAudio(index, startSec, shouldPlay);
+      this._setVideoSource(muxedUrl, target, shouldPlay, null, 'mux');
     });
   };
 
@@ -1217,7 +1240,7 @@ class Component extends DCLogic {
     }
     var v = this._video;
     if (!v) return;
-    var t = v.currentTime;
+    var t = this._getPlaybackTime();
     var found = '';
     for (var i = 0; i < this._subtitleCues.length; i++) {
       var c = this._subtitleCues[i];
@@ -1232,38 +1255,70 @@ class Component extends DCLogic {
       this._video = el;
       el.crossOrigin = 'anonymous';
       el.volume = this.state.volume;
-      el.muted = this.state.currentAudioTrack >= 0 ? true : this.state.muted;
+      el.muted = this.state.muted;
+
       el.addEventListener('timeupdate', () => {
-        this.setState({ currentTime: el.currentTime });
-        this._syncAudioToVideo();
+        if (!this._seekingPreview && !this._changingSource) {
+          var t = this.state.currentAudioTrack >= 0
+            ? (this._videoStreamOffset || 0) + (el.currentTime || 0)
+            : (el.currentTime || 0);
+          if (this.state.duration > 0) t = Math.min(this.state.duration, t);
+          this.setState({ currentTime: t });
+        }
         this._updateSubtitle();
       });
-      el.addEventListener('loadedmetadata', () => this.setState({ duration: el.duration || 0 }));
-      el.addEventListener('canplay', () => this.setState({ videoLoading: false }));
-      el.addEventListener('error', () => this.setState({ videoLoading: false, videoError: 'Lecture impossible — le flux vidéo a renvoyé une erreur.' }));
+
+      el.addEventListener('loadedmetadata', () => {
+        if (this.state.currentAudioTrack < 0) {
+          if (isFinite(el.duration) && el.duration > 0) this.setState({ duration: el.duration });
+          if (this._pendingOriginalSeek != null && this._pendingOriginalSeek > 0.05) {
+            var target = this._pendingOriginalSeek;
+            if (isFinite(el.duration) && el.duration > 0) target = Math.min(target, Math.max(0, el.duration - 0.05));
+            this._waitingOriginalSeek = true;
+            try { el.currentTime = target; } catch (e) { this._waitingOriginalSeek = false; }
+          } else {
+            this._pendingOriginalSeek = null;
+          }
+        } else if ((!this.state.duration || this.state.duration <= 0) && isFinite(el.duration) && el.duration > 0) {
+          this.setState({ duration: (this._videoStreamOffset || 0) + el.duration });
+        }
+      });
+
+      el.addEventListener('canplay', () => this._finishSourceChange());
+
+      el.addEventListener('error', () => {
+        if (this._sourceKind === 'mux' && this.state.currentAudioTrack >= 0 && this.state.currentVideoId) {
+          var target = this.state.currentTime || this._getPlaybackTime();
+          var shouldResume = !!this._resumeAfterSourceChange || !el.paused;
+          this._sourceKind = 'fallback';
+          this.toast('Cette piste ne peut pas être remuxée. Retour à l’audio original.', false);
+          this.setState({ currentAudioTrack: -1 }, () => {
+            this._setVideoSource(this._buildOriginalVideoUrl(this.state.currentVideoId), 0, shouldResume, target, 'original');
+          });
+          return;
+        }
+        this.setState({ videoLoading: false, audioSwitching: false, videoError: 'Lecture impossible — le flux vidéo a renvoyé une erreur.' });
+      });
+
       el.addEventListener('play', () => {
         this.setState({ playing: true });
         this._scheduleHide();
-        if (this._audio && this.state.currentAudioTrack >= 0) {
-          this._syncAudioToVideo();
-          this._audio.play().catch(() => {});
-        }
       });
       el.addEventListener('pause', () => {
         this.setState({ playing: false, controlsVisible: true });
-        if (this._audio) this._audio.pause();
       });
       el.addEventListener('seeked', () => {
-        if (this._audio && this.state.currentAudioTrack >= 0 && this.state.currentVideoId) {
-          this.setState({ audioSwitching: true });
-          this._loadExternalAudio(this.state.currentAudioTrack, el.currentTime, !el.paused);
+        if (this._waitingOriginalSeek) {
+          this._waitingOriginalSeek = false;
+          this._pendingOriginalSeek = null;
+          this._videoStreamOffset = 0;
+          this.setState({ currentTime: el.currentTime || 0 });
+          this._finishSourceChange();
         }
         this._updateSubtitle();
       });
-      el.addEventListener('ratechange', this._syncAudioToVideo);
       el.addEventListener('ended', () => {
-        if (this._audio) this._audio.pause();
-        this.setState({ playing: false, controlsVisible: true });
+        this.setState({ playing: false, controlsVisible: true, currentTime: this.state.duration || this._getPlaybackTime() });
       });
       el.play().catch(() => {});
     }
@@ -1282,17 +1337,26 @@ class Component extends DCLogic {
 
   seekDown = (e) => {
     const bar = e.currentTarget;
+    const v = this._video;
+    if (!v || !this.state.duration) return;
+    const shouldResume = !v.paused;
+    try { v.pause(); } catch (err) {}
+    this._seekingPreview = true;
+    let target = this.state.currentTime || 0;
     const apply = (ev) => {
       const r = bar.getBoundingClientRect();
       const pct = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
-      if (this._video && this.state.duration) {
-        this._video.currentTime = pct * this.state.duration;
-        this.setState({ currentTime: pct * this.state.duration });
-      }
+      target = pct * this.state.duration;
+      this.setState({ currentTime: target });
     };
     apply(e);
     const move = (ev) => apply(ev);
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      this._seekingPreview = false;
+      this._seekTo(target, shouldResume);
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
@@ -1305,9 +1369,8 @@ class Component extends DCLogic {
       const muted = pct === 0;
       if (this._video) {
         this._video.volume = pct;
-        this._video.muted = this.state.currentAudioTrack >= 0 ? true : muted;
+        this._video.muted = muted;
       }
-      if (this._audio) { this._audio.volume = pct; this._audio.muted = muted; }
       this.setState({ volume: pct, muted: muted });
     };
     apply(e);
@@ -1319,8 +1382,7 @@ class Component extends DCLogic {
 
   toggleMute = () => {
     const m = !this.state.muted;
-    if (this._video) this._video.muted = this.state.currentAudioTrack >= 0 ? true : m;
-    if (this._audio) this._audio.muted = m;
+    if (this._video) this._video.muted = m;
     this.setState({ muted: m });
   };
 
@@ -1559,7 +1621,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#C8C0DC' : '#7A7290',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v3.2',
+      appVersion: 'v3.3-audio-sync',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError,
@@ -1638,11 +1700,7 @@ class Component extends DCLogic {
         ref: this.videoRef, src: s.videoUrl, onClick: this.togglePlay, playsInline: true, crossOrigin: 'anonymous',
         style: { width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' },
       }) : null,
-      audioEl: s.videoUrl ? React.createElement('audio', {
-        ref: this.audioRef, autoPlay: false, preload: s.currentAudioTrack >= 0 ? 'auto' : 'none',
-        onCanPlay: this._onAudioCanPlay, onError: this._onAudioError,
-        style: { position: 'absolute', left: 0, top: 0, width: 0, height: 0, opacity: 0, pointerEvents: 'none' },
-      }) : null,
+      audioEl: null,
       detailSeasons: detailSeasons,
 
       playingTitle: s.playingTitle,

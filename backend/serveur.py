@@ -503,7 +503,7 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
         "-headers", _get_drive_auth_header(),
         "-v", "error",
         "-show_entries",
-        "stream=index,codec_name,codec_type:stream_disposition=default:stream_tags=language,title,handler_name",
+        "format=duration:stream=index,codec_name,codec_type:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
         "-of", "json",
         _get_drive_media_url(video_id),
     ]
@@ -519,10 +519,16 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
         raise RuntimeError(f"ffprobe a échoué: {detail}")
 
     try:
-        streams = json.loads(result.stdout or "{}").get("streams", [])
+        probe_data = json.loads(result.stdout or "{}")
+        streams = probe_data.get("streams", [])
     except json.JSONDecodeError as exc:
         raise RuntimeError("Réponse ffprobe invalide") from exc
 
+    video_streams = [
+        s for s in streams
+        if s.get("codec_type") == "video"
+        and not bool((s.get("disposition") or {}).get("attached_pic", 0))
+    ]
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
     subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
 
@@ -550,7 +556,20 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
             "default": bool((stream.get("disposition") or {}).get("default", 0)),
         })
 
-    data = {"audio": audio, "subtitles": subtitles}
+    duration_raw = (probe_data.get("format") or {}).get("duration")
+    try:
+        duration = max(0.0, float(duration_raw))
+    except (TypeError, ValueError):
+        duration = 0.0
+
+    primary_video = video_streams[0] if video_streams else {}
+    data = {
+        "audio": audio,
+        "subtitles": subtitles,
+        "duration": duration,
+        "video_stream_index": primary_video.get("index"),
+        "video_codec": primary_video.get("codec_name", ""),
+    }
     with _TRACKS_CACHE_LOCK:
         _TRACKS_CACHE[video_id] = {"cached_at": now, "data": data}
     return data
@@ -676,6 +695,129 @@ def get_subtitle(
         raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {exc}")
 
 
+
+@app.get("/mux/{video_id}/{track_index}")
+def get_muxed_video(
+    video_id: str,
+    track_index: int,
+    request: Request,
+    token: Optional[str] = Query(None),
+    start: Optional[float] = Query(None),
+):
+    """Diffuse la vidéo et la piste audio choisie dans un seul flux MP4.
+
+    Le son et l'image partagent ainsi la même horloge média. Cela évite les
+    décalages et les micro-coupures provoqués par deux éléments HTML séparés.
+    """
+    _verifier_token_query(request, token)
+    try:
+        tracks = _probe_media(video_id)
+        audio_tracks = tracks["audio"]
+        if track_index < 0 or track_index >= len(audio_tracks):
+            raise HTTPException(status_code=400, detail="Index audio invalide")
+
+        video_stream_index = tracks.get("video_stream_index")
+        if video_stream_index is None:
+            raise HTTPException(status_code=422, detail="Aucune piste vidéo exploitable")
+
+        selected = audio_tracks[track_index]
+        audio_stream_index = selected.get("stream_index")
+        if audio_stream_index is None:
+            raise HTTPException(status_code=422, detail="Piste audio invalide")
+
+        start_sec = max(0.0, float(start or 0.0))
+        # Recherche rapide près de la position demandée, puis petite recherche
+        # précise. On évite ainsi de relire tout le film depuis le début.
+        coarse_seek = max(0.0, start_sec - 3.0)
+        fine_seek = max(0.0, start_sec - coarse_seek)
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-headers", _get_drive_auth_header(),
+        ]
+        if coarse_seek > 0:
+            cmd += ["-ss", f"{coarse_seek:.3f}"]
+        cmd += ["-i", _get_drive_media_url(video_id)]
+        if fine_seek > 0:
+            cmd += ["-ss", f"{fine_seek:.3f}"]
+
+        cmd += [
+            "-map", f"0:{video_stream_index}",
+            "-map", f"0:{audio_stream_index}",
+            "-c:v", "copy",
+            # On normalise toujours la piste choisie en AAC. Cela corrige les
+            # timestamps irréguliers de certaines pistes AAC/AC3/E-AC3/DTS.
+            "-c:a", "aac", "-b:a", "192k",
+            "-af", "aresample=async=1000:first_pts=0",
+            "-sn", "-dn",
+            "-map_metadata", "-1",
+            "-fflags", "+genpts",
+            "-avoid_negative_ts", "make_zero",
+            "-max_muxing_queue_size", "4096",
+        ]
+        if str(tracks.get("video_codec") or "").lower() in {"hevc", "h265"}:
+            # Safari/iPhone et plusieurs téléviseurs attendent le tag hvc1.
+            cmd += ["-tag:v", "hvc1"]
+        cmd += [
+            "-f", "mp4",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset",
+            "-frag_duration", "1000000",
+            "-flush_packets", "1",
+            "pipe:1",
+        ]
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=0,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=503, detail="ffmpeg n'est pas installé sur Render") from exc
+
+        def generate():
+            try:
+                assert process.stdout is not None
+                while True:
+                    chunk = process.stdout.read(128 * 1024)
+                    if not chunk:
+                        break
+                    yield chunk
+                code = process.wait(timeout=5)
+                if code != 0 and process.stderr is not None:
+                    error = process.stderr.read().decode("utf-8", errors="replace").strip()[-1200:]
+                    print(f"[DanaTrap] mux {video_id}/{track_index} code={code}: {error}")
+            except GeneratorExit:
+                pass
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=3)
+                    except Exception:
+                        process.kill()
+
+        return StreamingResponse(
+            generate(),
+            media_type="video/mp4",
+            headers={
+                "Cache-Control": "no-store",
+                "Access-Control-Allow-Origin": "*",
+                "X-Content-Type-Options": "nosniff",
+                "X-Accel-Buffering": "no",
+                "Accept-Ranges": "none",
+            },
+        )
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        print(f"[DanaTrap] mux audio/vidéo impossible: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erreur de lecture avec cette piste audio: {exc}")
+
+
 @app.get("/audio/{video_id}/{track_index}")
 def get_audio(
     video_id: str,
@@ -773,7 +915,7 @@ def get_audio(
 _FRONTEND_DIR = (pathlib.Path(__file__).parent.parent / "frontend").resolve()
 if (_FRONTEND_DIR / "index.html").exists():
     ROUTES_PROTEGEES = {
-        "login", "bibliotheque", "stream", "tracks", "audio", "subtitle", "admin", "api",
+        "login", "bibliotheque", "stream", "tracks", "mux", "audio", "subtitle", "admin", "api",
         "favicon.ico", "token.pickle", "credentials.json",
         "utilisateurs.json", "static",
     }
