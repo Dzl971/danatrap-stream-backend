@@ -14,9 +14,9 @@ Dans le service `danatrap-stream-backend`, onglet **Environment** :
 | Clé | Valeur |
 |---|---|
 | `TOKEN_BASE64` | Copie le contenu de `backend/token_base64.txt` (sur UNE seule ligne) |
-| `CLE_SECRETE_JWT` | `P239yNuNzPdsWAe1R1qwDfDLlNnhzEljd0_0VXw6WMDkxlqDfD-ThIlVX2h0zeDl` |
+| `CLE_SECRETE_JWT` | Génère une nouvelle valeur aléatoire longue (ne réutilise pas une clé partagée ou enregistrée dans Git) |
 
-⚠️ Ne committe JAMAIS `token_base64.txt` ou `CLE_SECRETE_JWT` dans Git.
+⚠️ Ne committe JAMAIS `token_base64.txt`, `token.pickle`, `credentials.json` ou `CLE_SECRETE_JWT` dans Git.
 
 ## 3. Redémarrer le service
 

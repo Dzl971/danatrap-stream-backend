@@ -921,8 +921,12 @@ class Component extends DCLogic {
 
   _abortVideo() {
     if (this._video) { try { this._video.pause(); this._video.removeAttribute('src'); this._video.load(); } catch (e) {} }
+    if (this._audio) { try { this._audio.pause(); this._audio.removeAttribute('src'); this._audio.load(); } catch (e) {} }
     if (this._hideTimer) { clearTimeout(this._hideTimer); this._hideTimer = null; }
     this._video = null;
+    this._audio = null;
+    this._audioStartOffset = 0;
+    this._subtitleCues = null;
   }
 
   _stripExt = (name) => String(name || '').replace(/\.[a-z0-9]{2,4}$/i, '');
@@ -978,7 +982,7 @@ class Component extends DCLogic {
       videoUrl: url, videoLoading: true, videoError: '',
       playing: false, currentTime: 0, duration: 0, controlsVisible: true,
       epPos: null,
-      currentVideoId: videoId, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, audioSwitching: false,
+      currentVideoId: videoId, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false,
     }, () => {
       const v = this._video;
       if (v && v.getAttribute('src') !== url) { v.src = url; }
@@ -997,37 +1001,89 @@ class Component extends DCLogic {
   // ---- player wiring ----
   audioRef = (el) => {
     this._audio = el;
+    if (el) {
+      el.volume = this.state.volume;
+      el.muted = this.state.muted;
+    }
   };
 
   _buildAudioUrl = (videoId, trackIndex, startSec) => {
     var url = this.api + '/audio/' + encodeURIComponent(videoId) + '/' + trackIndex + '?token=' + encodeURIComponent(this.state.token);
-    if (startSec && startSec > 0) url += '&start=' + startSec.toFixed(2);
+    if (startSec && startSec > 0) url += '&start=' + startSec.toFixed(3);
     return url;
+  };
+
+  _stopExternalAudio = () => {
+    var a = this._audio;
+    if (!a) return;
+    this._ignoreAudioErrors = true;
+    try {
+      a.pause();
+      a.removeAttribute('src');
+      a.load();
+    } catch (e) {}
+    this._audioStartOffset = 0;
+    setTimeout(() => { this._ignoreAudioErrors = false; }, 0);
+  };
+
+  _loadExternalAudio = (trackIndex, startSec, autoplay) => {
+    var a = this._audio;
+    if (!a || !this.state.currentVideoId || trackIndex < 0) return;
+    this._audioStartOffset = Math.max(0, Number(startSec) || 0);
+    this._audioShouldAutoplay = !!autoplay;
+    a.pause();
+    a.volume = this.state.volume;
+    a.muted = this.state.muted;
+    a.src = this._buildAudioUrl(this.state.currentVideoId, trackIndex, this._audioStartOffset);
+    a.load();
+    if (autoplay) a.play().catch(() => {});
   };
 
   _syncAudioToVideo = () => {
     var v = this._video; var a = this._audio;
-    if (!v || !a) return;
+    if (!v || !a || this.state.currentAudioTrack < 0) return;
     a.playbackRate = v.playbackRate;
-    a.volume = v.volume;
-    if (this.state.currentAudioTrack < 0) {
-      a.muted = v.muted;
-    } else {
-      a.muted = false;
+    a.volume = this.state.volume;
+    a.muted = this.state.muted;
+    // Le flux audio repart de zéro à chaque changement/seek. On corrige
+    // uniquement une dérive sensible pour éviter des micro-coupures permanentes.
+    var expected = Math.max(0, v.currentTime - (this._audioStartOffset || 0));
+    if (a.readyState >= 2 && isFinite(a.currentTime) && Math.abs(a.currentTime - expected) > 0.45) {
+      try { a.currentTime = expected; } catch (e) {}
     }
   };
 
   _onAudioCanPlay = () => {
     var v = this._video; var a = this._audio;
-    if (!v || !a) return;
-    if (!v.paused) a.play().then(() => { this.setState({ audioSwitching: false }); }).catch(() => {});
+    if (!v || !a || this.state.currentAudioTrack < 0) return;
+    this._syncAudioToVideo();
+    this.setState({ audioSwitching: false });
+    if (!v.paused || this._audioShouldAutoplay) {
+      a.play().catch(() => {});
+    }
+    this._audioShouldAutoplay = false;
+  };
+
+  _onAudioError = () => {
+    if (this._ignoreAudioErrors || this.state.currentAudioTrack < 0) return;
+    console.error('[DanaTrap] impossible de lire la piste audio sélectionnée');
+    this._stopExternalAudio();
+    if (this._video) this._video.muted = this.state.muted;
+    this.setState({ currentAudioTrack: -1, audioSwitching: false });
+    this.toast('Cette piste audio n’a pas pu être chargée. Audio original réactivé.', false);
   };
 
   _loadTracks = async (videoId) => {
     try {
       const res = await this.authFetch('/tracks/' + encodeURIComponent(videoId));
-      if (!res.ok) return;
+      if (res.status === 401) return this.sessionExpired();
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch (e) {}
+        throw new Error(detail || ('Erreur ' + res.status));
+      }
       const data = await res.json();
+      if (this.state.currentVideoId !== videoId) return;
       const token = this.state.token;
       const subs = (Array.isArray(data.subtitles) ? data.subtitles : []).map((t, i) => {
         return Object.assign({}, t, {
@@ -1037,99 +1093,117 @@ class Component extends DCLogic {
       this.setState({
         audioTracks: Array.isArray(data.audio) ? data.audio : [],
         subtitleTracks: subs,
-      }, () => {
-        if (this.state.currentSubtitleTrack >= 0) {
-          this._setSubtitleTrack(String(this.state.currentSubtitleTrack));
-        }
       });
-    } catch (e) {}
+    } catch (e) {
+      console.error('[DanaTrap] chargement des pistes impossible:', e);
+      if (this.state.currentVideoId === videoId) {
+        this.toast('Impossible d’analyser les pistes audio et les sous-titres : ' + e.message, false);
+      }
+    }
   };
 
   _setAudioTrack = (indexStr) => {
     var index = parseInt(indexStr, 10);
-    var self = this;
-    var a = this._audio; var v = this._video;
+    var v = this._video;
+    if (!isFinite(index)) return;
+
     if (index < 0) {
-      this.setState({ currentAudioTrack: index, audioSwitching: false });
-      if (a) { a.pause(); a.removeAttribute('src'); a.load(); }
-      if (v) { v.muted = false; }
+      this._stopExternalAudio();
+      if (v) v.muted = this.state.muted;
+      this.setState({ currentAudioTrack: -1, audioSwitching: false });
       return;
     }
-    if (!this.state.currentVideoId) return;
-    this.setState({ currentAudioTrack: index, audioSwitching: true });
+    if (!this.state.currentVideoId || index >= this.state.audioTracks.length) return;
+
     var startSec = v ? v.currentTime : 0;
-    var url = this._buildAudioUrl(this.state.currentVideoId, index, startSec);
-    if (a) {
-      a.muted = false;
-      a.src = url;
-      a.load();
-      if (v) {
-        v.muted = true;
-        var playRetries = 0;
-        var tryPlay = function() {
-          if (!v || v.paused) return;
-          a.play().then(function() {
-            self.setState({ audioSwitching: false });
-          }).catch(function(err) {
-            playRetries++;
-            console.warn('[DanaTrap] audio play failed (' + playRetries + '):', err);
-            if (playRetries < 5) {
-              setTimeout(tryPlay, 500);
-            } else {
-              console.error('[DanaTrap] audio failed after 5 retries, unmuting video');
-              v.muted = false;
-              self.setState({ audioSwitching: false });
-            }
-          });
-        };
-        setTimeout(tryPlay, 200);
+    var shouldPlay = !!(v && !v.paused);
+    this.setState({ currentAudioTrack: index, audioSwitching: true }, () => {
+      if (v) v.muted = true; // coupe toujours la piste intégrée
+      this._loadExternalAudio(index, startSec, shouldPlay);
+    });
+  };
+
+  _setSubtitleTrack = async (indexStr) => {
+    var index = parseInt(indexStr, 10);
+    if (!isFinite(index)) return;
+    this.setState({ currentSubtitleTrack: index, subtitleText: '' });
+    this._subtitleCues = null;
+    if (index < 0) return;
+
+    var tracks = this.state.subtitleTracks;
+    if (!tracks || index >= tracks.length || !tracks[index] || !tracks[index].src) return;
+    var selectedVideoId = this.state.currentVideoId;
+    try {
+      const res = await fetch(tracks[index].src, { cache: 'no-store' });
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch (e) {}
+        throw new Error(detail || ('Erreur ' + res.status));
       }
-    } else {
-      console.error('[DanaTrap] audio element not found');
+      const text = await res.text();
+      if (this.state.currentVideoId !== selectedVideoId || this.state.currentSubtitleTrack !== index) return;
+      this._subtitleCues = this._parseVTT(text);
+      if (!this._subtitleCues.length) throw new Error('La piste ne contient aucun sous-titre lisible');
+      this._updateSubtitle();
+    } catch (e) {
+      console.error('[DanaTrap] chargement des sous-titres impossible:', e);
+      if (this.state.currentVideoId === selectedVideoId && this.state.currentSubtitleTrack === index) {
+        this.setState({ currentSubtitleTrack: -1, subtitleText: '' });
+        this.toast('Sous-titres indisponibles : ' + e.message, false);
+      }
     }
   };
 
-  _setSubtitleTrack = (indexStr) => {
-    var index = parseInt(indexStr, 10);
-    this.setState({ currentSubtitleTrack: index, subtitleText: '' });
-    this._subtitleCues = null;
-    var self = this;
-    if (index < 0) return;
-    var tracks = this.state.subtitleTracks;
-    if (!tracks || index >= tracks.length) return;
-    var t = tracks[index];
-    if (!t || !t.src) return;
-    fetch(t.src)
-      .then(function(res) { return res.text(); })
-      .then(function(text) {
-        self._subtitleCues = self._parseVTT(text);
-        console.log('[DanaTrap] Subtitle cues loaded:', self._subtitleCues.length);
-      })
-      .catch(function(err) {
-        console.error('[DanaTrap] Subtitle fetch error:', err);
-      });
+  _parseVTTTime = (raw) => {
+    var normalized = String(raw || '').replace(',', '.').trim();
+    var parts = normalized.split(':');
+    if (parts.length < 2 || parts.length > 3) return NaN;
+    var sec = parseFloat(parts.pop());
+    var min = parseInt(parts.pop(), 10);
+    var hour = parts.length ? parseInt(parts.pop(), 10) : 0;
+    if (![sec, min, hour].every(isFinite)) return NaN;
+    return hour * 3600 + min * 60 + sec;
+  };
+
+  _cleanSubtitleText = (value) => {
+    var text = String(value || '')
+      .replace(/\{\\[^}]+\}/g, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '');
+    if (typeof document !== 'undefined') {
+      var area = document.createElement('textarea');
+      area.innerHTML = text;
+      text = area.value;
+    }
+    return text.trim();
   };
 
   _parseVTT = (text) => {
     var cues = [];
-    var lines = text.split(/\r?\n/);
+    var lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/);
     var i = 0;
-    var start = 0, end = 0;
     while (i < lines.length) {
       var line = lines[i].trim();
+      if (line.indexOf('NOTE') === 0) {
+        i++;
+        while (i < lines.length && lines[i].trim() !== '') i++;
+        continue;
+      }
       if (line.indexOf('-->') >= 0) {
-        var match = line.match(/(?:(\d{2}):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d{2}):)?(\d{2}):(\d{2})[.,](\d{3})/);
-        if (match) {
-          start = (match[1] ? parseInt(match[1]) * 3600 : 0) + parseInt(match[2]) * 60 + parseInt(match[3]) + parseInt(match[4]) / 1000;
-          end = (match[5] ? parseInt(match[5]) * 3600 : 0) + parseInt(match[6]) * 60 + parseInt(match[7]) + parseInt(match[8]) / 1000;
-        }
-        var cueLines = []
+        var parts = line.split('-->');
+        var start = this._parseVTTTime(parts[0]);
+        var endToken = (parts[1] || '').trim().split(/\s+/)[0];
+        var end = this._parseVTTTime(endToken);
+        var cueLines = [];
         i++;
         while (i < lines.length && lines[i].trim() !== '') {
-          cueLines.push(lines[i].trim());
+          cueLines.push(lines[i]);
           i++;
         }
-        cues.push({ start: start, end: end, text: cueLines.join('\n') });
+        var cueText = this._cleanSubtitleText(cueLines.join('\n'));
+        if (isFinite(start) && isFinite(end) && end >= start && cueText) {
+          cues.push({ start: start, end: end, text: cueText });
+        }
       }
       i++;
     }
@@ -1137,7 +1211,10 @@ class Component extends DCLogic {
   };
 
   _updateSubtitle = () => {
-    if (!this._subtitleCues || this._subtitleCues.length === 0) return;
+    if (!this._subtitleCues || this._subtitleCues.length === 0) {
+      if (this.state.subtitleText) this.setState({ subtitleText: '' });
+      return;
+    }
     var v = this._video;
     if (!v) return;
     var t = v.currentTime;
@@ -1145,10 +1222,9 @@ class Component extends DCLogic {
     for (var i = 0; i < this._subtitleCues.length; i++) {
       var c = this._subtitleCues[i];
       if (t >= c.start && t <= c.end) { found = c.text; break; }
+      if (c.start > t) break;
     }
-    if (found !== this.state.subtitleText) {
-      this.setState({ subtitleText: found });
-    }
+    if (found !== this.state.subtitleText) this.setState({ subtitleText: found });
   };
 
   videoRef = (el) => {
@@ -1156,7 +1232,7 @@ class Component extends DCLogic {
       this._video = el;
       el.crossOrigin = 'anonymous';
       el.volume = this.state.volume;
-      el.muted = this.state.muted;
+      el.muted = this.state.currentAudioTrack >= 0 ? true : this.state.muted;
       el.addEventListener('timeupdate', () => {
         this.setState({ currentTime: el.currentTime });
         this._syncAudioToVideo();
@@ -1168,7 +1244,10 @@ class Component extends DCLogic {
       el.addEventListener('play', () => {
         this.setState({ playing: true });
         this._scheduleHide();
-        if (this._audio && this.state.currentAudioTrack >= 0) this._audio.play().catch(() => {});
+        if (this._audio && this.state.currentAudioTrack >= 0) {
+          this._syncAudioToVideo();
+          this._audio.play().catch(() => {});
+        }
       });
       el.addEventListener('pause', () => {
         this.setState({ playing: false, controlsVisible: true });
@@ -1176,15 +1255,16 @@ class Component extends DCLogic {
       });
       el.addEventListener('seeked', () => {
         if (this._audio && this.state.currentAudioTrack >= 0 && this.state.currentVideoId) {
-          var startSec = el.currentTime;
-          var url = this._buildAudioUrl(this.state.currentVideoId, this.state.currentAudioTrack, startSec);
-          this._audio.src = url;
-          this._audio.load();
-          if (!el.paused) this._audio.play().catch(() => {});
+          this.setState({ audioSwitching: true });
+          this._loadExternalAudio(this.state.currentAudioTrack, el.currentTime, !el.paused);
         }
+        this._updateSubtitle();
       });
       el.addEventListener('ratechange', this._syncAudioToVideo);
-      el.addEventListener('ended', () => this.setState({ playing: false, controlsVisible: true }));
+      el.addEventListener('ended', () => {
+        if (this._audio) this._audio.pause();
+        this.setState({ playing: false, controlsVisible: true });
+      });
       el.play().catch(() => {});
     }
   };
@@ -1222,8 +1302,13 @@ class Component extends DCLogic {
     const apply = (ev) => {
       const r = bar.getBoundingClientRect();
       const pct = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
-      if (this._video) { this._video.volume = pct; this._video.muted = pct === 0; }
-      this.setState({ volume: pct, muted: pct === 0 });
+      const muted = pct === 0;
+      if (this._video) {
+        this._video.volume = pct;
+        this._video.muted = this.state.currentAudioTrack >= 0 ? true : muted;
+      }
+      if (this._audio) { this._audio.volume = pct; this._audio.muted = muted; }
+      this.setState({ volume: pct, muted: muted });
     };
     apply(e);
     const move = (ev) => apply(ev);
@@ -1234,7 +1319,8 @@ class Component extends DCLogic {
 
   toggleMute = () => {
     const m = !this.state.muted;
-    if (this._video) this._video.muted = m;
+    if (this._video) this._video.muted = this.state.currentAudioTrack >= 0 ? true : m;
+    if (this._audio) this._audio.muted = m;
     this.setState({ muted: m });
   };
 
@@ -1554,7 +1640,7 @@ class Component extends DCLogic {
       }) : null,
       audioEl: s.videoUrl ? React.createElement('audio', {
         ref: this.audioRef, autoPlay: false, preload: s.currentAudioTrack >= 0 ? 'auto' : 'none',
-        onCanPlay: this._onAudioCanPlay,
+        onCanPlay: this._onAudioCanPlay, onError: this._onAudioError,
         style: { position: 'absolute', left: 0, top: 0, width: 0, height: 0, opacity: 0, pointerEvents: 'none' },
       }) : null,
       detailSeasons: detailSeasons,

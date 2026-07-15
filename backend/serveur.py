@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, Request, Query
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 import shutil
+import re
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
@@ -439,108 +440,47 @@ def stream_video(
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "drive_configured": CREDENTIALS is not None}
+    return {"status": "ok", "drive_configured": CREDENTIALS is not None, "ffmpeg": bool(shutil.which("ffmpeg")), "ffprobe": bool(shutil.which("ffprobe"))}
 
 
 
 # ==================== PISTES AUDIO / SOUS-TITRES ====================
+# Les navigateurs ne permettent pas de changer de piste audio de façon fiable
+# dans un MP4/MKV progressif. Le serveur expose donc chaque piste audio comme un
+# flux audio séparé, synchronisé par le lecteur web.
+
 def _get_drive_media_url(video_id: str) -> str:
     return f"https://www.googleapis.com/drive/v3/files/{video_id}?alt=media"
 
+
 def _get_drive_auth_header() -> str:
+    # FFmpeg attend une ligne d'en-tête HTTP terminée par CRLF.
     access_token = get_access_token()
-    return f"Authorization: Bearer {access_token}"
-
-def _executer_ffprobe(video_id: str, stream_type: str) -> list:
-    url = _get_drive_media_url(video_id)
-    headers = _get_drive_auth_header()
-    cmd = [
-        "ffprobe", "-headers", headers, "-v", "error",
-        "-select_streams", stream_type,
-        "-show_entries", "stream=index,codec_name,codec_type,disposition:stream_tags=language,title,handler_name",
-        "-of", "json", url
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode != 0:
-            print(f"ffprobe error ({stream_type}): {result.stderr[:500]}")
-            return []
-        data = json.loads(result.stdout)
-        return data.get("streams", [])
-    except Exception as e:
-        print(f"ffprobe exception ({stream_type}): {e}")
-        return []
+    return f"Authorization: Bearer {access_token}\r\n"
 
 
-# ==================== CACHE AUDIO ====================
-AUDIO_CACHE_DIR = pathlib.Path(tempfile.gettempdir()) / "danatrap_audio"
-AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-_audio_cache_locks: dict = {}
-
-def _audio_cache_paths(video_id: str, track_index: int):
-    base = AUDIO_CACHE_DIR / f"{video_id}_{track_index}"
-    return base.with_suffix(".mp4"), pathlib.Path(str(base) + ".part"), pathlib.Path(str(base) + ".done")
-
-def _is_audio_cached(video_id: str, track_index: int) -> bool:
-    cache_path, _, done_path = _audio_cache_paths(video_id, track_index)
-    return cache_path.exists() and cache_path.stat().st_size > 0 and done_path.exists()
-
-def _get_cache_lock(video_id: str, track_index: int) -> threading.Lock:
-    key = f"{video_id}_{track_index}"
-    if key not in _audio_cache_locks:
-        _audio_cache_locks[key] = threading.Lock()
-    return _audio_cache_locks[key]
-
-def _extract_audio_to_cache(video_id: str, track_index: int, stream_index: int, codec: str):
-    """Extrait une piste audio depuis Drive vers le cache local (thread-safe)."""
-    lock = _get_cache_lock(video_id, track_index)
-    if not lock.acquire(blocking=False):
-        return
-    try:
-        if _is_audio_cached(video_id, track_index):
-            return
-        cache_path, part_path, done_path = _audio_cache_paths(video_id, track_index)
-        part_path.parent.mkdir(parents=True, exist_ok=True)
-        codec_args = ["-c:a", "copy"] if codec in ("aac",) else ["-c:a", "aac", "-b:a", "192k"]
-        cmd = [
-            "ffmpeg", "-y", "-headers", _get_drive_auth_header(),
-            "-i", _get_drive_media_url(video_id),
-            "-map", f"0:{stream_index}",
-            *codec_args,
-            "-f", "mp4", "-movflags", "faststart",
-            str(part_path)
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=600)
-        shutil.move(str(part_path), str(cache_path))
-        done_path.touch()
-        print(f"[DanaTrap] audio cached: {video_id}/{track_index} ({cache_path.stat().st_size} bytes)")
-    except Exception as e:
-        print(f"[DanaTrap] audio cache extraction failed {video_id}/{track_index}: {e}")
-        try:
-            cache_path, part_path, done_path = _audio_cache_paths(video_id, track_index)
-            if part_path.exists():
-                part_path.unlink()
-            if done_path.exists() and not cache_path.exists():
-                done_path.unlink()
-        except Exception:
-            pass
-    finally:
-        lock.release()
+_TRACKS_CACHE: dict[str, dict] = {}
+_TRACKS_CACHE_TTL = int(os.environ.get("TRACKS_CACHE_TTL", "3600"))
+_TRACKS_CACHE_LOCK = threading.Lock()
 
 
 def _normaliser_langue(tags: dict) -> str:
     for key in ("language", "LANGUAGE", "lang", "LANG"):
-        if key in tags and tags[key]:
-            return tags[key]
+        if tags.get(key):
+            return str(tags[key])
     return ""
 
-_HANDLERS_GENERIQUES = {"soundhandler", "subtitleshandler", "subtitlehandler", "handler"}
+
+_HANDLERS_GENERIQUES = {
+    "soundhandler", "subtitleshandler", "subtitlehandler", "videohandler", "handler"
+}
+
 
 def _format_track_label(tags: dict, stream_type: str, index: int) -> str:
     lang = _normaliser_langue(tags).strip()
-    raw_title = (tags.get("title") or tags.get("name") or tags.get("handler_name") or "").strip()
+    raw_title = str(tags.get("title") or tags.get("name") or tags.get("handler_name") or "").strip()
     title = raw_title if raw_title.lower() not in _HANDLERS_GENERIQUES else ""
-    prefix = "Audio" if stream_type == "a" else "Sous-titre"
+    prefix = "Audio" if stream_type == "audio" else "Sous-titre"
     if lang and title:
         return f"{lang.upper()} - {title}"
     if lang:
@@ -549,171 +489,291 @@ def _format_track_label(tags: dict, stream_type: str, index: int) -> str:
         return f"{prefix} {index + 1} - {title}"
     return f"{prefix} {index + 1}"
 
+
+def _probe_media(video_id: str, force: bool = False) -> dict:
+    """Analyse une seule fois les flux audio/sous-titres du média distant."""
+    now = time.time()
+    with _TRACKS_CACHE_LOCK:
+        cached = _TRACKS_CACHE.get(video_id)
+        if not force and cached and now - cached["cached_at"] < _TRACKS_CACHE_TTL:
+            return cached["data"]
+
+    cmd = [
+        "ffprobe",
+        "-headers", _get_drive_auth_header(),
+        "-v", "error",
+        "-show_entries",
+        "stream=index,codec_name,codec_type:stream_disposition=default:stream_tags=language,title,handler_name",
+        "-of", "json",
+        _get_drive_media_url(video_id),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=75)
+    except FileNotFoundError as exc:
+        raise RuntimeError("ffprobe n'est pas installé sur le serveur Render") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("L'analyse des pistes a dépassé 75 secondes") from exc
+
+    if result.returncode != 0:
+        detail = (result.stderr or "Erreur ffprobe inconnue").strip()[-1200:]
+        raise RuntimeError(f"ffprobe a échoué: {detail}")
+
+    try:
+        streams = json.loads(result.stdout or "{}").get("streams", [])
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("Réponse ffprobe invalide") from exc
+
+    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+    subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
+
+    audio = []
+    for i, stream in enumerate(audio_streams):
+        tags = stream.get("tags") or {}
+        audio.append({
+            "index": i,
+            "stream_index": stream.get("index"),
+            "language": _normaliser_langue(tags),
+            "title": _format_track_label(tags, "audio", i),
+            "codec": stream.get("codec_name", ""),
+            "default": bool((stream.get("disposition") or {}).get("default", 0)),
+        })
+
+    subtitles = []
+    for i, stream in enumerate(subtitle_streams):
+        tags = stream.get("tags") or {}
+        subtitles.append({
+            "index": i,
+            "stream_index": stream.get("index"),
+            "language": _normaliser_langue(tags),
+            "title": _format_track_label(tags, "subtitle", i),
+            "codec": stream.get("codec_name", ""),
+            "default": bool((stream.get("disposition") or {}).get("default", 0)),
+        })
+
+    data = {"audio": audio, "subtitles": subtitles}
+    with _TRACKS_CACHE_LOCK:
+        _TRACKS_CACHE[video_id] = {"cached_at": now, "data": data}
+    return data
+
+
 @app.get("/tracks/{video_id}")
 def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
     try:
-        audio_streams = _executer_ffprobe(video_id, "a")
-        subtitle_streams = _executer_ffprobe(video_id, "s")
-        audio = []
-        for i, s in enumerate(audio_streams):
-            tags = s.get("tags", {})
-            audio.append({
-                "index": i,
-                "stream_index": s.get("index"),
-                "language": _normaliser_langue(tags),
-                "title": _format_track_label(tags, "a", i),
-                "codec": s.get("codec_name", ""),
-                "default": bool(s.get("disposition", {}).get("default", 0))
-            })
-        subtitles = []
-        for i, s in enumerate(subtitle_streams):
-            tags = s.get("tags", {})
-            subtitles.append({
-                "index": i,
-                "stream_index": s.get("index"),
-                "language": _normaliser_langue(tags),
-                "title": _format_track_label(tags, "s", i),
-                "codec": s.get("codec_name", ""),
-                "default": bool(s.get("disposition", {}).get("default", 0))
-            })
-        # Pre-warm audio cache in background so switching tracks is fast
-        for i, s in enumerate(audio_streams):
-            if not _is_audio_cached(video_id, i):
-                threading.Thread(
-                    target=_extract_audio_to_cache,
-                    args=(video_id, i, s.get("index"), s.get("codec_name", "")),
-                    daemon=True
-                ).start()
-        return {"audio": audio, "subtitles": subtitles}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur analyse des pistes: {e}")
+        # Important : cette route ne lance plus l'extraction complète des pistes.
+        # Elle répond dès que ffprobe a identifié les langues disponibles.
+        return _probe_media(video_id)
+    except RuntimeError as exc:
+        print(f"[DanaTrap] analyse des pistes impossible pour {video_id}: {exc}")
+        raise HTTPException(status_code=502, detail=str(exc))
+
 
 def _verifier_token_query(request: Request, token: Optional[str] = Query(None)):
-    """Verifie le JWT depuis le query param 'token' ou le header Authorization.
-    Necessaire car les elements <track> et <audio> ne peuvent pas envoyer de headers."""
+    """Vérifie le JWT depuis la query string ou le header Authorization."""
     token_final = token
     if not token_final:
-        auth_header = request.headers.get('authorization', '')
-        if auth_header.startswith('Bearer '):
-            token_final = auth_header.replace('Bearer ', '')
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token_final = auth_header[7:]
     if not token_final:
         raise HTTPException(status_code=401, detail="Token manquant")
     try:
         payload = jwt.decode(token_final, CLE_SECRETE_JWT, algorithms=[ALGORITHME])
         pseudo = payload.get("sub")
-        if pseudo is None:
+        if not pseudo:
             raise HTTPException(status_code=401, detail="Token invalide")
         return {"pseudo": pseudo, "est_admin": payload.get("est_admin", False)}
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token invalide ou expire")
+        raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+
+
+_IMAGE_SUBTITLE_CODECS = {
+    "hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"
+}
+_SUBTITLE_CACHE_DIR = pathlib.Path(tempfile.gettempdir()) / "danatrap_subtitles"
+_SUBTITLE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_SUBTITLE_LOCKS: dict[str, threading.Lock] = {}
+_SUBTITLE_LOCKS_GUARD = threading.Lock()
+
+
+def _subtitle_cache_path(video_id: str, track_index: int) -> pathlib.Path:
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", video_id)
+    return _SUBTITLE_CACHE_DIR / f"{safe_id}_{track_index}.vtt"
+
+
+def _subtitle_lock(video_id: str, track_index: int) -> threading.Lock:
+    key = f"{video_id}:{track_index}"
+    with _SUBTITLE_LOCKS_GUARD:
+        return _SUBTITLE_LOCKS.setdefault(key, threading.Lock())
+
 
 @app.get("/subtitle/{video_id}/{track_index}")
-def get_subtitle(video_id: str, track_index: int, request: Request, token: Optional[str] = Query(None)):
-    utilisateur = _verifier_token_query(request, token)
+def get_subtitle(
+    video_id: str,
+    track_index: int,
+    request: Request,
+    token: Optional[str] = Query(None),
+):
+    _verifier_token_query(request, token)
     try:
-        url = _get_drive_media_url(video_id)
-        headers = _get_drive_auth_header()
-        subtitle_streams = _executer_ffprobe(video_id, "s")
-        if track_index < 0 or track_index >= len(subtitle_streams):
+        tracks = _probe_media(video_id)
+        subtitles = tracks["subtitles"]
+        if track_index < 0 or track_index >= len(subtitles):
             raise HTTPException(status_code=400, detail="Index de sous-titre invalide")
-        stream_index = subtitle_streams[track_index].get("index")
-        tmp_path = tempfile.mktemp(suffix=".vtt")
-        cmd = [
-            "ffmpeg", "-y", "-headers", headers, "-i", url,
-            "-map", f"0:{stream_index}",
-            "-c:s", "webvtt", "-f", "webvtt", tmp_path
-        ]
-        subprocess.run(cmd, check=True, timeout=120)
-        with open(tmp_path, "r", encoding="utf-8") as f:
-            data = f.read()
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-        resp = StreamingResponse(iter([data.encode("utf-8")]), media_type="text/vtt; charset=utf-8")
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "*"
-        return resp
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {e}")
+
+        selected = subtitles[track_index]
+        codec = selected.get("codec", "")
+        if codec in _IMAGE_SUBTITLE_CODECS:
+            raise HTTPException(
+                status_code=422,
+                detail="Cette piste contient des sous-titres en image (PGS/DVD) et ne peut pas être affichée comme texte dans le navigateur.",
+            )
+
+        cache_path = _subtitle_cache_path(video_id, track_index)
+        with _subtitle_lock(video_id, track_index):
+            if not cache_path.exists() or cache_path.stat().st_size == 0:
+                cmd = [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                    "-headers", _get_drive_auth_header(),
+                    "-i", _get_drive_media_url(video_id),
+                    "-map", f"0:{selected['stream_index']}",
+                    "-vn", "-an", "-dn",
+                    "-c:s", "webvtt",
+                    "-f", "webvtt",
+                    str(cache_path),
+                ]
+                try:
+                    result = subprocess.run(cmd, capture_output=True, timeout=180)
+                except FileNotFoundError as exc:
+                    raise HTTPException(status_code=503, detail="ffmpeg n'est pas installé sur Render") from exc
+                except subprocess.TimeoutExpired as exc:
+                    raise HTTPException(status_code=504, detail="Extraction des sous-titres trop longue") from exc
+                if result.returncode != 0:
+                    error = result.stderr.decode("utf-8", errors="replace").strip()[-1200:]
+                    try:
+                        cache_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    raise HTTPException(status_code=422, detail=f"Sous-titres incompatibles: {error or 'conversion impossible'}")
+
+        data = cache_path.read_bytes()
+        if not data.strip():
+            raise HTTPException(status_code=422, detail="La piste de sous-titres est vide")
+        return Response(
+            content=data,
+            media_type="text/vtt; charset=utf-8",
+            headers={
+                "Cache-Control": "private, max-age=3600",
+                "Access-Control-Allow-Origin": "*",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        print(f"[DanaTrap] extraction sous-titres impossible: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erreur extraction sous-titres: {exc}")
+
 
 @app.get("/audio/{video_id}/{track_index}")
-def get_audio(video_id: str, track_index: int, request: Request, token: Optional[str] = Query(None), start: Optional[float] = Query(None)):
-    utilisateur = _verifier_token_query(request, token)
+def get_audio(
+    video_id: str,
+    track_index: int,
+    request: Request,
+    token: Optional[str] = Query(None),
+    start: Optional[float] = Query(None),
+):
+    _verifier_token_query(request, token)
     try:
-        url = _get_drive_media_url(video_id)
-        headers = _get_drive_auth_header()
-        audio_streams = _executer_ffprobe(video_id, "a")
-        if track_index < 0 or track_index >= len(audio_streams):
+        tracks = _probe_media(video_id)
+        audio_tracks = tracks["audio"]
+        if track_index < 0 or track_index >= len(audio_tracks):
             raise HTTPException(status_code=400, detail="Index audio invalide")
-        stream_index = audio_streams[track_index].get("index")
-        codec = audio_streams[track_index].get("codec_name", "")
-        seek_args = ["-ss", str(start)] if start is not None else []
-        cached = _is_audio_cached(video_id, track_index)
-        if cached:
-            # Serve from local cache: near-instant track switching
-            cache_path, _, _ = _audio_cache_paths(video_id, track_index)
-            process = subprocess.Popen(
-                [
-                    "ffmpeg", "-y", "-i", str(cache_path),
-                    "-c:a", "copy",
-                    *seek_args,
-                    "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
-                    "pipe:1"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
-            )
+
+        selected = audio_tracks[track_index]
+        stream_index = selected.get("stream_index")
+        codec = selected.get("codec", "")
+        start_sec = max(0.0, float(start or 0.0))
+        seek_args = ["-ss", f"{start_sec:.3f}"] if start_sec > 0 else []
+
+        # AAC peut être remuxé sans perte. Les autres codecs sont convertis en AAC,
+        # le format le plus compatible avec Chrome, Safari, iOS et Android.
+        if codec == "aac":
+            codec_args = ["-c:a", "copy"]
         else:
-            # Start warming cache for next time while streaming from Drive now
-            threading.Thread(
-                target=_extract_audio_to_cache,
-                args=(video_id, track_index, stream_index, codec),
-                daemon=True
-            ).start()
-            codec_args = ["-c:a", "copy"] if codec in ("aac",) else ["-c:a", "aac", "-b:a", "192k"]
+            codec_args = ["-c:a", "aac", "-b:a", "192k", "-af", "aresample=async=1:first_pts=0"]
+
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-headers", _get_drive_auth_header(),
+            *seek_args,
+            "-i", _get_drive_media_url(video_id),
+            "-map", f"0:{stream_index}",
+            "-vn", "-sn", "-dn",
+            *codec_args,
+            "-map_metadata", "-1",
+            "-avoid_negative_ts", "make_zero",
+            "-f", "mp4",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-frag_duration", "1000000",
+            "pipe:1",
+        ]
+        try:
             process = subprocess.Popen(
-                [
-                    "ffmpeg", "-y", "-headers", headers, *seek_args, "-i", url,
-                    "-map", f"0:{stream_index}",
-                    *codec_args,
-                    "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
-                    "pipe:1"
-                ],
+                cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.PIPE,
+                bufsize=0,
             )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=503, detail="ffmpeg n'est pas installé sur Render") from exc
+
         def generate():
             try:
+                assert process.stdout is not None
                 while True:
-                    chunk = process.stdout.read(65536)
+                    chunk = process.stdout.read(64 * 1024)
                     if not chunk:
                         break
                     yield chunk
+                code = process.wait(timeout=5)
+                if code != 0 and process.stderr is not None:
+                    error = process.stderr.read().decode("utf-8", errors="replace").strip()[-1000:]
+                    print(f"[DanaTrap] ffmpeg audio {video_id}/{track_index} code={code}: {error}")
+            except GeneratorExit:
+                pass
             finally:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except Exception:
-                    process.kill()
-        resp = StreamingResponse(generate(), media_type="audio/mp4")
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
-        resp.headers["Access-Control-Allow-Headers"] = "*"
-        return resp
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur extraction audio: {e}")
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=3)
+                    except Exception:
+                        process.kill()
 
+        return StreamingResponse(
+            generate(),
+            media_type="audio/mp4",
+            headers={
+                "Cache-Control": "no-store",
+                "Access-Control-Allow-Origin": "*",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    except HTTPException:
+        raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        print(f"[DanaTrap] extraction audio impossible: {exc}")
+        raise HTTPException(status_code=500, detail=f"Erreur extraction audio: {exc}")
 
 
 # ==================== FRONTEND STATIQUE (DOIT ETRE EN DERNIER !) ====================
 _FRONTEND_DIR = (pathlib.Path(__file__).parent.parent / "frontend").resolve()
 if (_FRONTEND_DIR / "index.html").exists():
     ROUTES_PROTEGEES = {
-        "login", "bibliotheque", "stream", "admin", "api",
+        "login", "bibliotheque", "stream", "tracks", "audio", "subtitle", "admin", "api",
         "favicon.ico", "token.pickle", "credentials.json",
         "utilisateurs.json", "static",
     }
