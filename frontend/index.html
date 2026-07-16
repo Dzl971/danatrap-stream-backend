@@ -634,16 +634,32 @@ input { outline: none; }
                 <div style="font-size:12px;line-height:1.45;color:#FF7FA8">{{ setupSubtitleError }}</div>
               </sc-if>
             </div>
+
+            <sc-if value="{{ setupHasResume }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:12px;padding:15px;border-radius:11px;background:rgba(7,9,14,.62);border:1px solid rgba(255,255,255,.11)">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:14px">
+                  <div>
+                    <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:16px;letter-spacing:1.5px;color:#FFFFFF;text-transform:uppercase">Continuer votre vidéo</div>
+                    <div style="margin-top:3px;font-size:12px;color:#8E98A8">Dernière position enregistrée : <span style="color:#F5F5F7;font-weight:700">{{ setupResumeLabel }}</span></div>
+                  </div>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E82967" stroke-width="2"><path d="M4 12a8 8 0 1 0 2.34-5.66"></path><polyline points="4 4 4 10 10 10"></polyline></svg>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <button onClick="{{ resumeSavedPlayback }}" style="background:{{ resumeChoiceBg }};border:1px solid {{ resumeChoiceBorder }};border-radius:8px;padding:11px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:14px;letter-spacing:1.2px;color:{{ resumeChoiceColor }};text-transform:uppercase;cursor:pointer">Reprendre à {{ setupResumeLabel }}</button>
+                  <button onClick="{{ startPlaybackFromBeginning }}" style="background:{{ beginningChoiceBg }};border:1px solid {{ beginningChoiceBorder }};border-radius:8px;padding:11px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:14px;letter-spacing:1.2px;color:{{ beginningChoiceColor }};text-transform:uppercase;cursor:pointer">Depuis le début</button>
+                </div>
+              </div>
+            </sc-if>
           </div>
         </sc-if>
 
         <div style="display:flex;gap:12px;justify-content:flex-end;padding-top:2px">
           <button onClick="{{ cancelPlayerSetup }}" style="background:transparent;border:1px solid #3A455C;border-radius:7px;padding:11px 19px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#A8B0BE;text-transform:uppercase;cursor:pointer">Annuler</button>
           <sc-if value="{{ setupCanStart }}" hint-placeholder-val="{{ false }}">
-            <button onClick="{{ startPreparedPlayback }}" style="background:linear-gradient(95deg,#E82967,#C51F59);border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 22px rgba(232,41,103,0.34)">Lancer la lecture</button>
+            <button onClick="{{ startPreparedPlayback }}" style="background:linear-gradient(95deg,#E82967,#C51F59);border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 22px rgba(232,41,103,0.34)">{{ setupStartLabel }}</button>
           </sc-if>
           <sc-if value="{{ setupCannotStart }}" hint-placeholder-val="{{ false }}">
-            <button disabled="true" style="background:#2B2536;border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#667085;text-transform:uppercase;cursor:not-allowed">Lancer la lecture</button>
+            <button disabled="true" style="background:#2B2536;border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#667085;text-transform:uppercase;cursor:not-allowed">{{ setupStartLabel }}</button>
           </sc-if>
         </div>
       </div>
@@ -761,7 +777,7 @@ class Component extends DCLogic {
     show: null, showKind: '',
     playingTitle: '', videoUrl: null, videoLoading: false, videoError: '',
     currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false,
-    playerSetupOpen: false, setupLoading: false, setupError: '', setupTitle: '', setupVideoId: null, setupReturnView: 'library', setupAudioTrack: -1, setupSubtitleTrack: -1, setupSubtitleLoading: false, setupSubtitleError: '', setupDuration: 0,
+    playerSetupOpen: false, setupLoading: false, setupError: '', setupTitle: '', setupVideoId: null, setupReturnView: 'library', setupAudioTrack: -1, setupSubtitleTrack: -1, setupSubtitleLoading: false, setupSubtitleError: '', setupDuration: 0, setupSavedProgress: 0, setupResumeFromSaved: true,
     returnView: 'library',
     playing: false, currentTime: 0, duration: 0, volume: 1, muted: false,
     controlsVisible: true,
@@ -865,7 +881,75 @@ class Component extends DCLogic {
     } catch (e) {}
   }
 
+  _progressStorageKey() {
+    var pseudo = String(this.state.userPseudo || '').trim().toLowerCase();
+    if (!pseudo) {
+      try { pseudo = String(localStorage.getItem('danatrap_pseudo') || '').trim().toLowerCase(); } catch (e) {}
+    }
+    return 'dts_watch_progress_v1_' + encodeURIComponent(pseudo || 'utilisateur');
+  }
+
+  _readProgressMap() {
+    try {
+      var raw = localStorage.getItem(this._progressStorageKey());
+      var data = raw ? JSON.parse(raw) : {};
+      return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    } catch (e) { return {}; }
+  }
+
+  _writeProgressMap(map) {
+    try { localStorage.setItem(this._progressStorageKey(), JSON.stringify(map || {})); } catch (e) {}
+  }
+
+  _getSavedProgress(videoId) {
+    if (!videoId) return 0;
+    var map = this._readProgressMap();
+    var entry = map[String(videoId)];
+    var value = entry && typeof entry === 'object' ? entry.time : entry;
+    var time = Number(value) || 0;
+    return isFinite(time) && time >= 20 ? time : 0;
+  }
+
+  _clearSavedProgress(videoId) {
+    if (!videoId) return;
+    var map = this._readProgressMap();
+    if (Object.prototype.hasOwnProperty.call(map, String(videoId))) {
+      delete map[String(videoId)];
+      this._writeProgressMap(map);
+    }
+  }
+
+  _saveProgress(videoId, rawTime, rawDuration) {
+    if (!videoId) return;
+    var time = Math.max(0, Number(rawTime) || 0);
+    var duration = Math.max(0, Number(rawDuration) || 0);
+    if (duration > 0 && (time >= Math.max(0, duration - 45) || time / duration >= 0.95)) {
+      this._clearSavedProgress(videoId);
+      return;
+    }
+    if (time < 20) return;
+    var map = this._readProgressMap();
+    map[String(videoId)] = { time: Math.round(time * 10) / 10, duration: duration, updatedAt: Date.now() };
+    this._writeProgressMap(map);
+  }
+
+  _saveCurrentProgress = () => {
+    var videoId = this.state.currentVideoId;
+    if (!videoId) return;
+    var time = this._changingSource ? Number(this.state.currentTime) || 0 : this._getPlaybackTime();
+    if (!isFinite(time)) time = Number(this.state.currentTime) || 0;
+    this._saveProgress(videoId, time, this.state.duration);
+  };
+
+  _handleVisibilityChange = () => {
+    if (typeof document !== 'undefined' && document.hidden) this._saveCurrentProgress();
+  };
+
+  _handleBeforeUnload = () => this._saveCurrentProgress();
+
   componentDidMount() {
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this._handleVisibilityChange);
+    if (typeof window !== 'undefined') window.addEventListener('beforeunload', this._handleBeforeUnload);
     try {
       const token = localStorage.getItem('danatrap_token');
       if (token) {
@@ -884,6 +968,12 @@ class Component extends DCLogic {
           });
       }
     } catch (e) {}
+  }
+
+  componentWillUnmount() {
+    this._saveCurrentProgress();
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this._handleVisibilityChange);
+    if (typeof window !== 'undefined') window.removeEventListener('beforeunload', this._handleBeforeUnload);
   }
 
   toggleRemember = () => this.setState(s => ({ rememberMe: !s.rememberMe }));
@@ -1038,6 +1128,7 @@ class Component extends DCLogic {
   retryLibrary = () => this.loadLibrary();
 
   _abortVideo() {
+    this._saveCurrentProgress();
     if (this._video) { try { this._video.pause(); this._video.removeAttribute('src'); this._video.load(); } catch (e) {} }
     if (this._hideTimer) { clearTimeout(this._hideTimer); this._hideTimer = null; }
     this._video = null;
@@ -1106,6 +1197,7 @@ class Component extends DCLogic {
 
   playVideo = (title, videoId, returnView) => {
     this._abortVideo();
+    var savedProgress = this._getSavedProgress(videoId);
     this._subtitleCues = null;
     this._preparedSubtitleCues = null;
     this._preparedSubtitleIndex = -1;
@@ -1121,6 +1213,8 @@ class Component extends DCLogic {
       setupSubtitleLoading: false,
       setupSubtitleError: '',
       setupDuration: 0,
+      setupSavedProgress: savedProgress,
+      setupResumeFromSaved: savedProgress >= 20,
       epPos: null,
       currentVideoId: null,
       audioTracks: [],
@@ -1151,12 +1245,20 @@ class Component extends DCLogic {
       const subs = (Array.isArray(data.subtitles) ? data.subtitles : []).map((t, i) => Object.assign({}, t, {
         src: this.api + '/subtitle/' + encodeURIComponent(videoId) + '/' + i + '?token=' + encodeURIComponent(token)
       }));
+      var detectedDuration = Number(data.duration) || 0;
+      var savedProgress = Number(this.state.setupSavedProgress) || 0;
+      if (savedProgress > 0 && detectedDuration > 0 && (savedProgress >= Math.max(0, detectedDuration - 45) || savedProgress / detectedDuration >= 0.95)) {
+        this._clearSavedProgress(videoId);
+        savedProgress = 0;
+      }
       this.setState({
         setupLoading: false,
         setupError: '',
         audioTracks: Array.isArray(data.audio) ? data.audio : [],
         subtitleTracks: subs,
-        setupDuration: Number(data.duration) || 0,
+        setupDuration: detectedDuration,
+        setupSavedProgress: savedProgress,
+        setupResumeFromSaved: savedProgress >= 20 && this.state.setupResumeFromSaved,
       });
     } catch (e) {
       console.error('[DTS] préparation du lecteur impossible:', e);
@@ -1184,6 +1286,8 @@ class Component extends DCLogic {
       setupSubtitleLoading: false,
       setupSubtitleError: '',
       setupDuration: 0,
+      setupSavedProgress: 0,
+      setupResumeFromSaved: true,
       audioTracks: [],
       subtitleTracks: [],
     });
@@ -1195,6 +1299,9 @@ class Component extends DCLogic {
     if (index >= this.state.audioTracks.length) index = -1;
     this.setState({ setupAudioTrack: index });
   };
+
+  resumeSavedPlayback = () => this.setState({ setupResumeFromSaved: true });
+  startPlaybackFromBeginning = () => this.setState({ setupResumeFromSaved: false });
 
   onSetupSubtitleTrack = async (e) => {
     var index = parseInt(e.target.value, 10);
@@ -1242,12 +1349,15 @@ class Component extends DCLogic {
     if (!isFinite(subtitleIndex) || subtitleIndex >= s.subtitleTracks.length) subtitleIndex = -1;
 
     var videoId = s.setupVideoId;
+    var startAt = s.setupResumeFromSaved ? Math.max(0, Number(s.setupSavedProgress) || 0) : 0;
+    if (s.setupDuration > 0) startAt = Math.min(startAt, Math.max(0, s.setupDuration - 1));
+    if (!s.setupResumeFromSaved && s.setupSavedProgress > 0) this._clearSavedProgress(videoId);
     var url = audioIndex >= 0
-      ? this._buildMuxedVideoUrl(videoId, audioIndex, 0)
+      ? this._buildMuxedVideoUrl(videoId, audioIndex, startAt)
       : this._buildOriginalVideoUrl(videoId);
 
-    this._videoStreamOffset = 0;
-    this._pendingOriginalSeek = null;
+    this._videoStreamOffset = audioIndex >= 0 ? startAt : 0;
+    this._pendingOriginalSeek = audioIndex < 0 && startAt > 0 ? startAt : null;
     this._waitingOriginalSeek = false;
     this._resumeAfterSourceChange = true;
     this._sourceKind = audioIndex >= 0 ? 'mux' : 'original';
@@ -1268,7 +1378,7 @@ class Component extends DCLogic {
       videoLoading: true,
       videoError: '',
       playing: false,
-      currentTime: 0,
+      currentTime: startAt,
       duration: s.setupDuration || 0,
       controlsVisible: true,
       currentVideoId: videoId,
@@ -1291,7 +1401,7 @@ class Component extends DCLogic {
     this._subtitleCues = null;
     this._preparedSubtitleCues = null;
     this._preparedSubtitleIndex = -1;
-    this.setState({ view: back, playerSetupOpen: false, setupLoading: false, setupError: '', setupTitle: '', setupVideoId: null, setupAudioTrack: -1, setupSubtitleTrack: -1, setupSubtitleLoading: false, setupSubtitleError: '', setupDuration: 0, videoUrl: null, videoLoading: false, videoError: '', playing: false, currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false });
+    this.setState({ view: back, playerSetupOpen: false, setupLoading: false, setupError: '', setupTitle: '', setupVideoId: null, setupAudioTrack: -1, setupSubtitleTrack: -1, setupSubtitleLoading: false, setupSubtitleError: '', setupDuration: 0, setupSavedProgress: 0, setupResumeFromSaved: true, videoUrl: null, videoLoading: false, videoError: '', playing: false, currentVideoId: null, audioTracks: [], subtitleTracks: [], currentAudioTrack: -1, currentSubtitleTrack: -1, subtitleText: '', audioSwitching: false });
   };
 
   // ---- player wiring ----
@@ -1543,6 +1653,11 @@ class Component extends DCLogic {
             : (el.currentTime || 0);
           if (this.state.duration > 0) t = Math.min(this.state.duration, t);
           this.setState({ currentTime: t });
+          var now = Date.now();
+          if (now - (this._lastProgressSave || 0) >= 5000) {
+            this._lastProgressSave = now;
+            this._saveProgress(this.state.currentVideoId, t, this.state.duration);
+          }
         }
         this._updateSubtitle();
       });
@@ -1585,6 +1700,7 @@ class Component extends DCLogic {
       });
       el.addEventListener('pause', () => {
         this.setState({ playing: false, controlsVisible: true });
+        this._saveCurrentProgress();
       });
       el.addEventListener('seeked', () => {
         if (this._waitingOriginalSeek) {
@@ -1597,6 +1713,7 @@ class Component extends DCLogic {
         this._updateSubtitle();
       });
       el.addEventListener('ended', () => {
+        this._clearSavedProgress(this.state.currentVideoId);
         this.setState({ playing: false, controlsVisible: true, currentTime: this.state.duration || this._getPlaybackTime() });
       });
       el.play().catch(() => {});
@@ -1908,8 +2025,20 @@ class Component extends DCLogic {
       setupSubtitleError: s.setupSubtitleError,
       setupSubtitleHasError: !!s.setupSubtitleError,
       setupSubtitleReady: s.setupSubtitleTrack >= 0 && !s.setupSubtitleLoading && !s.setupSubtitleError && this._preparedSubtitleIndex === s.setupSubtitleTrack,
+      setupHasResume: s.setupSavedProgress >= 20,
+      setupResumeLabel: this._fmt(s.setupSavedProgress),
+      setupResumeFromSaved: s.setupResumeFromSaved,
+      resumeChoiceBg: s.setupResumeFromSaved ? 'linear-gradient(100deg,rgba(232,41,103,.30),rgba(118,87,255,.24))' : 'rgba(7,9,14,.72)',
+      resumeChoiceBorder: s.setupResumeFromSaved ? '#E82967' : '#3A455C',
+      resumeChoiceColor: s.setupResumeFromSaved ? '#FFFFFF' : '#9DA4B3',
+      beginningChoiceBg: !s.setupResumeFromSaved ? 'linear-gradient(100deg,rgba(232,41,103,.30),rgba(118,87,255,.24))' : 'rgba(7,9,14,.72)',
+      beginningChoiceBorder: !s.setupResumeFromSaved ? '#7657FF' : '#3A455C',
+      beginningChoiceColor: !s.setupResumeFromSaved ? '#FFFFFF' : '#9DA4B3',
+      setupStartLabel: s.setupSavedProgress >= 20 && s.setupResumeFromSaved ? 'Reprendre la lecture' : 'Lancer la lecture',
       onSetupAudioTrack: this.onSetupAudioTrack,
       onSetupSubtitleTrack: this.onSetupSubtitleTrack,
+      resumeSavedPlayback: this.resumeSavedPlayback,
+      startPlaybackFromBeginning: this.startPlaybackFromBeginning,
       startPreparedPlayback: this.startPreparedPlayback,
       cancelPlayerSetup: this.cancelPlayerSetup,
       retryPlayerSetup: this.retryPlayerSetup,
@@ -1924,7 +2053,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v4.0-dts-universe',
+      appVersion: 'v4.1-reprise-lecture',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError,

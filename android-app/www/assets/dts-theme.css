@@ -1,4 +1,4 @@
-/* DTS Universe — refonte visuelle v4.0 */
+/* DTS Universe — v4.1 : logo sans fond + reprise de lecture */
 :root {
   color-scheme: dark;
   --dts-bg: #07090E;
@@ -75,17 +75,18 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-weight: 800;
   letter-spacing: -1px;
   color: #fff;
-  background: linear-gradient(115deg, var(--dts-primary), var(--dts-secondary));
-  box-shadow: 0 14px 36px rgba(232,41,103,.28);
+  background: transparent;
+  box-shadow: none;
+  text-shadow: 0 3px 18px rgba(0,0,0,.78), 0 0 22px rgba(118,87,255,.20);
 }
 .dts-brand-mini {
-  min-width: 70px;
-  height: 42px;
-  padding: 0 13px;
-  border-radius: 9px;
-  display: grid;
-  place-items: center;
-  font-size: 25px;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  display: block;
+  font-size: 30px;
+  line-height: 1;
 }
 .dts-login-brandline span:last-child {
   font-size: 11px;
@@ -237,13 +238,12 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   cursor:pointer;
 }
 .dts-brand-mark {
-  min-width: 64px;
-  height: 38px;
-  padding: 0 12px;
-  border-radius: 8px;
-  display:grid;
-  place-items:center;
-  font-size:24px;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  display:block;
+  font-size:31px;
   line-height:1;
 }
 .dts-brand-copy { display:flex; flex-direction:column; align-items:flex-start; line-height:1; }
@@ -359,6 +359,6 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 @media (max-width: 420px) {
   .dts-login { padding-left:10px; padding-right:10px; }
   .dts-login-card { padding:22px 18px; }
-  .dts-brand-mark { min-width:57px; height:35px; font-size:22px; }
+  .dts-brand-mark { min-width:0; height:auto; font-size:27px; }
   .dts-mobile-nav { left:6px; right:6px; bottom:6px; }
 }
