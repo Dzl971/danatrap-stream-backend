@@ -2306,7 +2306,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v5.0-expérience-plus',
+      appVersion: 'v5.1-descriptions-auto',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError,
@@ -2477,10 +2477,14 @@ class Component extends DCLogic {
         {label:'Films',value:String(s.dashboard.films || 0),accent:'#38BDF8'},
         {label:'Séries + Anime',value:String((s.dashboard.series || 0) + (s.dashboard.anime || 0)),accent:'#FFD166'},
         {label:'Épisodes',value:String(s.dashboard.episodes || 0),accent:'#63E6BE'},
-        {label:'Comptes expirés',value:String(s.dashboard.comptes_expires || 0),accent:'#FF6B98'}
+        {label:'Comptes expirés',value:String(s.dashboard.comptes_expires || 0),accent:'#FF6B98'},
+        {label:'Sans description',value:String(s.dashboard.sans_description || 0),accent:'#FF9F43'}
       ] : [],
       systemStatus: s.dashboard ? [
-        {label:'Google Drive',ok:!!s.dashboard.drive,color:s.dashboard.drive?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.drive?'OK':'Erreur'}, {label:'FFmpeg',ok:!!s.dashboard.ffmpeg,color:s.dashboard.ffmpeg?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.ffmpeg?'OK':'Erreur'}, {label:'FFprobe',ok:!!s.dashboard.ffprobe,color:s.dashboard.ffprobe?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.ffprobe?'OK':'Erreur'}
+        {label:'Google Drive',ok:!!s.dashboard.drive,color:s.dashboard.drive?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.drive?'OK':'Erreur'},
+        {label:'TMDB',ok:!!s.dashboard.tmdb,color:s.dashboard.tmdb?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.tmdb?'Clé active':'Clé absente'},
+        {label:'FFmpeg',ok:!!s.dashboard.ffmpeg,color:s.dashboard.ffmpeg?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.ffmpeg?'OK':'Erreur'},
+        {label:'FFprobe',ok:!!s.dashboard.ffprobe,color:s.dashboard.ffprobe?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.ffprobe?'OK':'Erreur'}
       ] : [],
       refreshLibraryAdmin: this.refreshLibraryAdmin, refreshLibraryLabel: s.refreshingLibrary ? 'Actualisation…' : 'Actualiser le catalogue',
       users: (s.users || []).map(u => {

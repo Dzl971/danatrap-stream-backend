@@ -25,6 +25,8 @@ import time
 import shutil
 import re
 import hashlib
+import unicodedata
+from difflib import SequenceMatcher
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
@@ -584,34 +586,148 @@ def _choisir_certification(details: dict, type_contenu: str) -> Optional[str]:
     valeur = str((pays or {}).get("rating") or "").strip()
     return valeur or None
 
+def _retirer_accents(valeur: str) -> str:
+    texte = unicodedata.normalize("NFKD", str(valeur or ""))
+    return "".join(c for c in texte if not unicodedata.combining(c))
+
+
+def _normaliser_titre_comparaison(titre: str) -> str:
+    propre = _retirer_accents(titre).lower()
+    propre = re.sub(r"[^a-z0-9]+", " ", propre)
+    propre = re.sub(r"\b(?:the|a|an|le|la|les|un|une|des)\b", " ", propre)
+    return re.sub(r"\s+", " ", propre).strip()
+
+
 def _nettoyer_titre_tmdb(titre: str) -> str:
-    """Retire automatiquement les marqueurs de fichier qui perturbent la recherche TMDB."""
-    propre = re.sub(r"\[[^\]]*\]|\([^)]*(?:4k|1080p|720p|vf|vostfr|multi)[^)]*\)", " ", str(titre or ""), flags=re.I)
-    propre = re.sub(r"\b(?:4k|2160p|1080p|720p|480p|uhd|bluray|web[- .]?dl|webrip|x264|x265|hevc|multi|vostfr|vf2?|truefrench)\b", " ", propre, flags=re.I)
+    """Retire les marqueurs techniques sans détruire le vrai titre de l'œuvre."""
+    propre = str(titre or "")
+    propre = re.sub(r"\.(?:mkv|mp4|avi|mov|m4v|webm)$", "", propre, flags=re.I)
+    propre = re.sub(r"\[[^\]]*\]", " ", propre)
+    propre = re.sub(
+        r"\([^)]*(?:4k|2160p|1080p|720p|480p|vf|vostfr|multi|version\s+(?:longue|courte|complete)|integrale|remaster|fan\s*edit)[^)]*\)",
+        " ", propre, flags=re.I,
+    )
+    propre = re.sub(
+        r"\b(?:4k|2160p|1080p|720p|480p|uhd|bluray|web[- .]?dl|webrip|x264|x265|hevc|multi|vostfr|vf2?|truefrench|french|subfrench)\b",
+        " ", propre, flags=re.I,
+    )
     propre = re.sub(r"[._]+", " ", propre)
     propre = re.sub(r"\s+", " ", propre).strip(" -_")
     return propre or str(titre or "").strip()
 
 
+def _variantes_titre_tmdb(titre: str) -> list[str]:
+    """Produit plusieurs recherches sûres pour les montages Kai, versions longues, tags de fans, etc."""
+    base = _nettoyer_titre_tmdb(titre)
+    candidats = [base]
+
+    # Les mentions ajoutées par l'utilisateur sont souvent placées entre parenthèses.
+    sans_parentheses = re.sub(r"\([^)]*\)", " ", base)
+    candidats.append(re.sub(r"\s+", " ", sans_parentheses).strip(" -_"))
+
+    # Les montages personnels utilisent souvent ces suffixes alors que TMDB garde le titre officiel.
+    suffixes = re.compile(
+        r"(?:\s*[-–—:]\s*)?(?:kai|version\s+(?:longue|courte|complete|integrale)|integrale|complet(?:e)?|remaster(?:ed)?|fan\s*edit|cut)\s*$",
+        flags=re.I,
+    )
+    courant = base
+    for _ in range(3):
+        suivant = suffixes.sub("", courant).strip(" -_")
+        if suivant == courant:
+            break
+        candidats.append(suivant)
+        courant = suivant
+
+    # Retire aussi les numéros de saison ajoutés au nom du dossier principal.
+    candidats.append(re.sub(r"\b(?:saison|season)\s*\d+\b.*$", "", base, flags=re.I).strip(" -_"))
+
+    resultat = []
+    vus = set()
+    for candidat in candidats:
+        candidat = re.sub(r"\s+", " ", candidat or "").strip(" -_")
+        cle = candidat.casefold()
+        if candidat and cle not in vus:
+            vus.add(cle)
+            resultat.append(candidat)
+    return resultat or [str(titre or "").strip()]
+
+
+def _score_resultat_tmdb(resultat: dict, variantes: list[str], index_requete: int) -> float:
+    noms = [
+        resultat.get("title"), resultat.get("original_title"),
+        resultat.get("name"), resultat.get("original_name"),
+    ]
+    noms = [_normaliser_titre_comparaison(n) for n in noms if n]
+    meilleur = 0.0
+    for variante in variantes:
+        q = _normaliser_titre_comparaison(variante)
+        if not q:
+            continue
+        for nom in noms:
+            if q == nom:
+                score = 130.0
+            elif q in nom or nom in q:
+                score = 102.0 - abs(len(q) - len(nom)) * 0.3
+            else:
+                score = SequenceMatcher(None, q, nom).ratio() * 100.0
+            meilleur = max(meilleur, score)
+    # La première variante est la plus proche du nom original du dossier.
+    meilleur -= min(index_requete, 4) * 1.5
+    popularite = float(resultat.get("popularity") or 0)
+    meilleur += min(popularite / 100.0, 4.0)
+    return meilleur
+
+
 def rechercher_tmdb(titre, type_contenu="film"):
-    titre_recherche = _nettoyer_titre_tmdb(titre)
-    cle_cache = f"{type_contenu}:{titre_recherche.lower()}"
+    variantes = _variantes_titre_tmdb(titre)
+    cle_cache = f"{type_contenu}:{'|'.join(v.casefold() for v in variantes)}"
     if cle_cache in cache_tmdb:
         return cache_tmdb[cle_cache]
     if not TMDB_API_KEY:
         return {}
+
     endpoint = "movie" if type_contenu == "film" else "tv"
     url_recherche = f"https://api.themoviedb.org/3/search/{endpoint}"
-    params = {"api_key": TMDB_API_KEY, "query": titre_recherche, "language": "fr-FR", "include_adult": "false"}
     try:
-        reponse = requests.get(url_recherche, params=params, timeout=8)
-        reponse.raise_for_status()
-        resultats = reponse.json().get('results', [])
-        if not resultats:
+        candidats: dict[int, tuple[dict, float, str]] = {}
+        for index, titre_recherche in enumerate(variantes[:5]):
+            params = {
+                "api_key": TMDB_API_KEY,
+                "query": titre_recherche,
+                "language": "fr-FR",
+                "include_adult": "false",
+            }
+            reponse = requests.get(url_recherche, params=params, timeout=8)
+            reponse.raise_for_status()
+            resultats = reponse.json().get("results", [])
+
+            # Certains titres japonais sont mieux indexés avec la recherche anglaise.
+            if not resultats:
+                params["language"] = "en-US"
+                reponse = requests.get(url_recherche, params=params, timeout=8)
+                reponse.raise_for_status()
+                resultats = reponse.json().get("results", [])
+
+            for resultat_brut in resultats[:8]:
+                identifiant = resultat_brut.get("id")
+                if not identifiant:
+                    continue
+                score = _score_resultat_tmdb(resultat_brut, variantes, index)
+                precedent = candidats.get(int(identifiant))
+                if precedent is None or score > precedent[1]:
+                    candidats[int(identifiant)] = (resultat_brut, score, titre_recherche)
+
+        if not candidats:
             cache_tmdb[cle_cache] = {}
             return {}
-        premier = resultats[0]
-        tmdb_id = premier['id']
+
+        premier, score_match, requete_utilisee = max(candidats.values(), key=lambda x: x[1])
+        if score_match < 48:
+            print(f"TMDB: correspondance trop faible pour '{titre}' ({score_match:.1f})")
+            cache_tmdb[cle_cache] = {}
+            return {}
+
+        tmdb_id = premier["id"]
         url_details = f"https://api.themoviedb.org/3/{endpoint}/{tmdb_id}"
         append = "credits,videos,release_dates" if type_contenu == "film" else "credits,videos,content_ratings"
         reponse_details = requests.get(
@@ -621,14 +737,29 @@ def rechercher_tmdb(titre, type_contenu="film"):
         )
         reponse_details.raise_for_status()
         details = reponse_details.json()
-        genres = [g['name'] for g in details.get('genres', [])]
+
+        synopsis = str(details.get("overview") or "").strip()
+        synopsis_langue = "fr"
+        if not synopsis:
+            # Si TMDB n'a pas encore de traduction française, on récupère automatiquement l'anglais.
+            reponse_en = requests.get(
+                url_details,
+                params={"api_key": TMDB_API_KEY, "language": "en-US"},
+                timeout=8,
+            )
+            reponse_en.raise_for_status()
+            details_en = reponse_en.json()
+            synopsis = str(details_en.get("overview") or premier.get("overview") or "").strip()
+            synopsis_langue = "en" if synopsis else None
+
+        genres = [g["name"] for g in details.get("genres", [])]
         if type_contenu == "film":
-            duree_minutes = details.get('runtime', 0)
-            date_sortie = details.get('release_date', '')
+            duree_minutes = details.get("runtime", 0)
+            date_sortie = details.get("release_date", "")
         else:
-            durees = details.get('episode_run_time', [])
+            durees = details.get("episode_run_time", [])
             duree_minutes = durees[0] if durees else 0
-            date_sortie = details.get('first_air_date', '')
+            date_sortie = details.get("first_air_date", "")
         annee = date_sortie[:4] if date_sortie else None
         heures = int(duree_minutes or 0) // 60
         minutes = int(duree_minutes or 0) % 60
@@ -638,15 +769,26 @@ def rechercher_tmdb(titre, type_contenu="film"):
             p.get("name") for p in (details.get("credits") or {}).get("crew", [])
             if p.get("job") in {"Director", "Creator"} and p.get("name")
         ][:4]
+        if type_contenu != "film":
+            for createur in details.get("created_by") or []:
+                nom = createur.get("name")
+                if nom and nom not in realisateurs:
+                    realisateurs.append(nom)
+            realisateurs = realisateurs[:4]
+
         resultat = {
             "tmdb_id": tmdb_id,
+            "titre_tmdb": details.get("title") or details.get("name") or premier.get("title") or premier.get("name"),
+            "requete_tmdb": requete_utilisee,
+            "score_tmdb": round(score_match, 1),
             "genres": genres,
             "duree": duree_texte,
             "annee": annee,
-            "note": round(float(details.get('vote_average', 0) or 0), 1),
-            "synopsis": details.get('overview', ''),
-            "backdrop_url": f"https://image.tmdb.org/t/p/w1280{details.get('backdrop_path')}" if details.get('backdrop_path') else None,
-            "poster_tmdb_url": f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get('poster_path') else None,
+            "note": round(float(details.get("vote_average", 0) or 0), 1),
+            "synopsis": synopsis,
+            "synopsis_langue": synopsis_langue,
+            "backdrop_url": f"https://image.tmdb.org/t/p/w1280{details.get('backdrop_path')}" if details.get("backdrop_path") else None,
+            "poster_tmdb_url": f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get("poster_path") else None,
             "acteurs": cast,
             "realisateurs": realisateurs,
             "certification": _choisir_certification(details, type_contenu),
@@ -779,6 +921,12 @@ def dashboard_admin(admin: str = Depends(verifier_admin)):
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "ffprobe": bool(shutil.which("ffprobe")),
         "drive": CREDENTIALS is not None,
+        "tmdb": bool(TMDB_API_KEY),
+        "sans_description": sum(
+            1 for categorie in ("films", "series", "anime")
+            for contenu in bibliotheque.get(categorie, [])
+            if not str(contenu.get("synopsis") or "").strip()
+        ),
         "cache_pistes": len(_TRACKS_CACHE) if "_TRACKS_CACHE" in globals() else 0,
         "bibliotheque_generee": bibliotheque.get("generated_at"),
     }
