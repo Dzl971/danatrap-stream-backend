@@ -2,7 +2,14 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090E">
+<meta name="description" content="DTS — Films, séries et anime réunis dans un seul univers.">
+<title>DTS — Films, Séries &amp; Anime</title>
+<link rel="icon" type="image/png" sizes="32x32" href="./assets/favicon-32.png">
+<link rel="apple-touch-icon" href="./assets/dts-icon-192.png">
+<link rel="manifest" href="./assets/site.webmanifest">
+<link rel="stylesheet" href="./assets/dts-theme.css">
 <script src="./react.production.min.js"></script>
 <script src="./react-dom.production.min.js"></script>
 <script src="./support.js"></script>
@@ -10,16 +17,16 @@
 <body>
 <x-dc>
 <helmet>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,700;1,800&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-html, body { margin: 0; padding: 0; background: #0D0B14; }
+html, body { margin: 0; padding: 0; background: #07090E; }
 * { box-sizing: border-box; }
 input { outline: none; }
 ::-webkit-scrollbar { height: 6px; width: 8px; background: transparent; }
-::-webkit-scrollbar-thumb { background: #2A2438; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: #273042; border-radius: 4px; }
 @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes glowpulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
@@ -28,7 +35,7 @@ input { outline: none; }
 .row-arrow { opacity: 0; transition: opacity 0.25s ease, background 0.15s, border-color 0.15s, box-shadow 0.15s; }
 .row-wrap:hover .row-arrow { opacity: 1; }
 .pcard { position: relative; z-index: 1; transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease; }
-.pcard:hover { transform: scale(1.15); z-index: 40; }
+.pcard:hover { transform: translateY(-7px) scale(1.055); z-index: 40; }
 .pcard .pinfo { opacity: 0; pointer-events: none; transition: opacity 0.25s ease 0.08s; }
 .pcard:hover .pinfo { opacity: 1; pointer-events: auto; }
 
@@ -66,41 +73,54 @@ input { outline: none; }
 
 </style>
 </helmet>
-<div style="min-height:100vh;background:#0D0B14;color:#EDEAF4;font-family:'Barlow',sans-serif;overflow-x:hidden">
+<div class="dts-app" style="min-height:100vh;background:#07090E;color:#F5F5F7;font-family:'Barlow',sans-serif;overflow-x:hidden">
 
   <!-- ============ LOGIN ============ -->
   <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
-    <div style="position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden">
-      <div style="position:absolute;top:-180px;left:-120px;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle, rgba(255,0,110,0.22) 0%, rgba(255,0,110,0) 70%);pointer-events:none"></div>
-      <div style="position:absolute;bottom:-200px;right:-140px;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle, rgba(0,240,255,0.16) 0%, rgba(0,240,255,0) 70%);pointer-events:none"></div>
-      <div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 4px);pointer-events:none"></div>
-      <div style="position:relative;width:380px;max-width:90vw;display:flex;flex-direction:column;gap:28px;padding:24px">
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;font-size:64px;line-height:0.95;letter-spacing:1px;background:linear-gradient(100deg, #FF006E 20%, #00F0FF 85%);-webkit-background-clip:text;background-clip:text;color:transparent;text-transform:uppercase">Danatrap</div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:18px;letter-spacing:6px;color:#7A7290;text-transform:uppercase">Streaming privé</div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:14px">
-          <div style="display:flex;flex-direction:column;gap:6px">
-            <label style="font-size:11px;font-weight:600;letter-spacing:2.5px;color:#7A7290;text-transform:uppercase">Pseudo</label>
-            <input type="text" value="{{ pseudo }}" onChange="{{ onPseudo }}" onKeyDown="{{ onKey }}" autoComplete="username" style="background:#14111E;border:1px solid #2A2438;border-radius:8px;padding:13px 16px;font-size:16px;color:#EDEAF4;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s" style-focus="border-color:#FF006E;box-shadow:0 0 0 1px #FF006E, 0 0 18px rgba(255,0,110,0.25)"></input>
+    <div class="dts-login">
+      <div class="dts-login-art"></div>
+      <div class="dts-login-overlay"></div>
+      <div class="dts-login-brandline">
+        <div class="dts-brand-mini">DTS</div>
+        <span>Films • Séries • Anime</span>
+      </div>
+
+      <div class="dts-login-copy">
+        <div class="dts-login-kicker">L'univers DTS</div>
+        <h1>Tous vos univers.<br><em>Un seul écran.</em></h1>
+        <p>Retrouvez vos films, vos séries et vos anime dans une expérience privée, moderne et pensée pour tous vos écrans.</p>
+      </div>
+
+      <div class="dts-login-panel">
+        <div class="dts-login-card">
+          <div class="dts-login-card-head">
+            <div class="dts-login-logo">DTS</div>
+            <h2>Bon retour parmi nous</h2>
+            <p>Connectez-vous pour accéder à votre bibliothèque.</p>
           </div>
-          <div style="display:flex;flex-direction:column;gap:6px">
-            <label style="font-size:11px;font-weight:600;letter-spacing:2.5px;color:#7A7290;text-transform:uppercase">Mot de passe</label>
-            <input type="password" value="{{ password }}" onChange="{{ onPassword }}" onKeyDown="{{ onKey }}" autoComplete="current-password" style="background:#14111E;border:1px solid #2A2438;border-radius:8px;padding:13px 16px;font-size:16px;color:#EDEAF4;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s" style-focus="border-color:#00F0FF;box-shadow:0 0 0 1px #00F0FF, 0 0 18px rgba(0,240,255,0.25)"></input>
-          </div>
-          <div onClick="{{ toggleRemember }}" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:2px;user-select:none">
-            <div style="width:18px;height:18px;flex:0 0 auto;border-radius:4px;border:1px solid {{ rememberBorder }};background:{{ rememberBg }};box-shadow:{{ rememberGlow }};display:flex;align-items:center;justify-content:center;transition:border-color 0.15s, background 0.15s, box-shadow 0.15s">
-              <sc-if value="{{ rememberMe }}" hint-placeholder-val="{{ false }}">
-                <svg width="11" height="9" viewBox="0 0 11 9" fill="none" stroke="#0D0B14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4.5 4,7.5 10,1.5"></polyline></svg>
-              </sc-if>
+          <div class="dts-login-form">
+            <div class="dts-field">
+              <label>Pseudo</label>
+              <input type="text" value="{{ pseudo }}" onChange="{{ onPseudo }}" onKeyDown="{{ onKey }}" autoComplete="username"></input>
             </div>
-            <div style="font-size:14px;font-weight:500;color:{{ rememberLabelColor }};transition:color 0.15s">Rester connecté</div>
+            <div class="dts-field">
+              <label>Mot de passe</label>
+              <input type="password" value="{{ password }}" onChange="{{ onPassword }}" onKeyDown="{{ onKey }}" autoComplete="current-password"></input>
+            </div>
+            <div onClick="{{ toggleRemember }}" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:2px;user-select:none">
+              <div style="width:18px;height:18px;flex:0 0 auto;border-radius:5px;border:1px solid {{ rememberBorder }};background:{{ rememberBg }};box-shadow:{{ rememberGlow }};display:flex;align-items:center;justify-content:center;transition:border-color 0.15s, background 0.15s, box-shadow 0.15s">
+                <sc-if value="{{ rememberMe }}" hint-placeholder-val="{{ false }}">
+                  <svg width="11" height="9" viewBox="0 0 11 9" fill="none" stroke="#07090E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1,4.5 4,7.5 10,1.5"></polyline></svg>
+                </sc-if>
+              </div>
+              <div style="font-size:14px;font-weight:500;color:{{ rememberLabelColor }};transition:color 0.15s">Rester connecté</div>
+            </div>
+            <sc-if value="{{ loginError }}" hint-placeholder-val="{{ false }}">
+              <div style="color:#FF6B98;font-size:14px;font-weight:500;padding:2px 2px 0">{{ loginError }}</div>
+            </sc-if>
+            <button class="dts-login-submit" onClick="{{ doLogin }}" style="margin-top:8px;border:none;padding:15px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;letter-spacing:2.5px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;transition:transform 0.12s, box-shadow 0.15s" style-active="transform:translateY(0px)">{{ loginLabel }}</button>
+            <div class="dts-version">{{ appVersion }}</div>
           </div>
-          <sc-if value="{{ loginError }}" hint-placeholder-val="{{ false }}">
-            <div style="color:#FF4D94;font-size:14px;font-weight:500;padding:2px 2px 0">{{ loginError }}</div>
-          </sc-if>
-          <button onClick="{{ doLogin }}" style="margin-top:8px;background:linear-gradient(95deg, #FF006E, #C4005A);border:none;border-radius:8px;padding:15px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:20px;letter-spacing:3px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 24px rgba(255,0,110,0.35);transition:transform 0.12s, box-shadow 0.15s" style-hover="transform:translateY(-1px);box-shadow:0 0 36px rgba(255,0,110,0.55)" style-active="transform:translateY(0px)">{{ loginLabel }}</button>
-          <div style="text-align:center;font-size:11px;color:#3A3448;margin-top:12px;font-weight:600">{{ appVersion }}</div>
         </div>
       </div>
     </div>
@@ -108,35 +128,41 @@ input { outline: none; }
 
   <!-- ============ LIBRARY ============ -->
   <sc-if value="{{ isLibrary }}" hint-placeholder-val="{{ false }}">
-    <div style="min-height:100vh">
-      <div class="dt-header" style="position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:16px 40px;background:rgba(13,11,20,0.85);backdrop-filter:blur(12px);border-bottom:1px solid #1E1A2C">
-        <div style="display:flex;align-items:center;gap:28px">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;font-size:30px;letter-spacing:1px;background:linear-gradient(100deg, #FF006E 20%, #00F0FF 85%);-webkit-background-clip:text;background-clip:text;color:transparent;text-transform:uppercase">Danatrap</div>
-          <div style="display:flex;align-items:center;gap:4px">
-            <button onClick="{{ goAccueil }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabAccueilBorder }};padding:8px 12px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;letter-spacing:2.5px;color:{{ tabAccueilColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s" style-hover="color:#EDEAF4">Accueil</button>
-            <button onClick="{{ goCatalogue }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabCatalogueBorder }};padding:8px 12px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;letter-spacing:2.5px;color:{{ tabCatalogueColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s" style-hover="color:#EDEAF4">Catalogue</button>
+    <div class="dts-library-shell" style="min-height:100vh">
+      <div class="dt-header" style="position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:14px 40px;background:rgba(7,9,14,0.82);backdrop-filter:blur(18px);border-bottom:1px solid #202735">
+        <div class="dts-header-left">
+          <button onClick="{{ goAccueil }}" class="dts-header-brand" aria-label="Accueil DTS">
+            <span class="dts-brand-mark">DTS</span>
+            <span class="dts-brand-copy"><strong>UNIVERSE</strong><small>Films • Séries • Anime</small></span>
+          </button>
+          <div class="dts-desktop-nav">
+            <button onClick="{{ goAccueil }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabAccueilBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabAccueilColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Accueil</button>
+            <button onClick="{{ goFilms }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabFilmsBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabFilmsColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Films</button>
+            <button onClick="{{ goSeries }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabSeriesBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabSeriesColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Séries</button>
+            <button onClick="{{ goAnime }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabAnimeBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabAnimeColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Anime</button>
+            <button onClick="{{ goCatalogue }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabCatalogueBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabCatalogueColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Catalogue</button>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:18px">
-          <div style="position:relative;display:flex;align-items:center">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#7A7290" stroke-width="1.8" stroke-linecap="round" style="position:absolute;left:12px;pointer-events:none"><circle cx="6.2" cy="6.2" r="4.7"></circle><line x1="9.8" y1="9.8" x2="14" y2="14"></line></svg>
-            <input type="text" value="{{ searchQuery }}" onChange="{{ onSearch }}" placeholder="Rechercher un titre…" style="width:240px;background:#14111E;border:1px solid #2A2438;border-radius:8px;padding:9px 34px 9px 36px;font-size:14px;color:#EDEAF4;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s, width 0.2s" style-focus="border-color:#00F0FF;box-shadow:0 0 0 1px #00F0FF, 0 0 14px rgba(0,240,255,0.2);width:300px"></input>
+        <div class="dts-header-actions">
+          <div class="dts-search" style="position:relative;display:flex;align-items:center">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="#848D9C" stroke-width="1.8" stroke-linecap="round" style="position:absolute;left:12px;pointer-events:none"><circle cx="6.2" cy="6.2" r="4.7"></circle><line x1="9.8" y1="9.8" x2="14" y2="14"></line></svg>
+            <input type="text" value="{{ searchQuery }}" onChange="{{ onSearch }}" placeholder="Rechercher un titre…" style="width:240px;background:#10141D;border:1px solid #273042;border-radius:9px;padding:9px 34px 9px 36px;font-size:14px;color:#F5F5F7;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s, width 0.2s" style-focus="border-color:#7657FF;box-shadow:0 0 0 1px #7657FF, 0 0 14px rgba(118,87,255,0.2);width:300px"></input>
             <sc-if value="{{ hasSearch }}" hint-placeholder-val="{{ false }}">
-              <button onClick="{{ clearSearch }}" aria-label="Effacer la recherche" style="position:absolute;right:8px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,0.08);color:#9A92B0;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, color 0.15s" style-hover="background:rgba(255,0,110,0.25);color:#FF006E">✕</button>
+              <button onClick="{{ clearSearch }}" aria-label="Effacer la recherche" style="position:absolute;right:8px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,0.08);color:#9DA4B3;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</button>
             </sc-if>
           </div>
           <sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ false }}">
-            <button onClick="{{ openAdmin }}" style="background:transparent;border:1px solid #00F0FF;border-radius:6px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:2px;color:#00F0FF;text-transform:uppercase;cursor:pointer;white-space:nowrap;box-shadow:0 0 12px rgba(0,240,255,0.2);transition:box-shadow 0.15s, background 0.15s" style-hover="box-shadow:0 0 20px rgba(0,240,255,0.45);background:rgba(0,240,255,0.08)">Admin</button>
+            <button class="dts-admin-btn" onClick="{{ openAdmin }}" style="background:transparent;border:1px solid #7657FF;border-radius:7px;padding:7px 13px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:1.8px;color:#AFA2FF;text-transform:uppercase;cursor:pointer;white-space:nowrap;box-shadow:0 0 12px rgba(118,87,255,0.15)">Admin</button>
           </sc-if>
-          <div style="font-size:14px;font-weight:600;color:#7A7290;letter-spacing:1px">{{ userPseudo }}</div>
-          <button onClick="{{ doLogout }}" style="background:transparent;border:1px solid #2A2438;border-radius:6px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#9A92B0;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#FF006E;color:#FF006E">Déconnexion</button>
+          <div class="dts-user" style="font-size:13px;font-weight:600;color:#848D9C;letter-spacing:1px">{{ userPseudo }}</div>
+          <button class="dts-logout" onClick="{{ doLogout }}" style="background:transparent;border:1px solid #273042;border-radius:7px;padding:7px 13px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:1.7px;color:#9DA4B3;text-transform:uppercase;cursor:pointer">Déconnexion</button>
         </div>
       </div>
 
       <sc-if value="{{ libError }}" hint-placeholder-val="{{ false }}">
         <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:80px 40px">
-          <div style="color:#FF4D94;font-size:16px;font-weight:500">{{ libError }}</div>
-          <button onClick="{{ retryLibrary }}" style="background:transparent;border:1px solid #FF006E;border-radius:6px;padding:10px 22px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:2px;color:#FF006E;text-transform:uppercase;cursor:pointer">Réessayer</button>
+          <div style="color:#FF6B98;font-size:16px;font-weight:500">{{ libError }}</div>
+          <button onClick="{{ retryLibrary }}" style="background:transparent;border:1px solid #E82967;border-radius:6px;padding:10px 22px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:2px;color:#E82967;text-transform:uppercase;cursor:pointer">Réessayer</button>
         </div>
       </sc-if>
 
@@ -144,10 +170,10 @@ input { outline: none; }
         <div style="display:flex;flex-direction:column;gap:36px;padding:32px 40px">
           <sc-for list="{{ skeletonRows }}" as="row" hint-placeholder-count="3">
             <div style="display:flex;flex-direction:column;gap:14px">
-              <div style="width:120px;height:24px;border-radius:4px;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
+              <div style="width:120px;height:24px;border-radius:4px;background:linear-gradient(90deg, #111722 25%, #1B2330 50%, #111722 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
               <div style="display:flex;gap:16px;overflow:hidden">
                 <sc-for list="{{ skeletonCards }}" as="c" hint-placeholder-count="6">
-                  <div style="flex:0 0 auto;width:172px;height:258px;border-radius:10px;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
+                  <div style="flex:0 0 auto;width:172px;height:258px;border-radius:10px;background:linear-gradient(90deg, #111722 25%, #1B2330 50%, #111722 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
                 </sc-for>
               </div>
             </div>
@@ -157,31 +183,31 @@ input { outline: none; }
 
       <sc-if value="{{ libReady }}" hint-placeholder-val="{{ false }}">
         <sc-if value="{{ heroOn }}" hint-placeholder-val="{{ false }}">
-          <div class="dt-hero" style="position:relative;width:100%;height:52vh;min-height:360px;overflow:hidden;background:#0A0812">
+          <div class="dt-hero" style="position:relative;width:100%;height:52vh;min-height:360px;overflow:hidden;background:#07090E">
             <sc-for list="{{ heroSlides }}" as="h" hint-placeholder-count="1">
               <div style="position:absolute;inset:0;opacity:{{ h.opacity }};pointer-events:{{ h.pe }};transition:opacity 0.9s ease">
                 <sc-if value="{{ h.posterUrl }}" hint-placeholder-val="{{ false }}">
                   <div style="position:absolute;inset:0">{{ h.bgEl }}</div>
                 </sc-if>
                 <div style="position:absolute;inset:0;background:linear-gradient(90deg, rgba(13,11,20,0.96) 0%, rgba(13,11,20,0.82) 34%, rgba(13,11,20,0.25) 70%, rgba(13,11,20,0.45) 100%)"></div>
-                <div style="position:absolute;left:0;right:0;bottom:0;height:120px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, #0D0B14 100%)"></div>
+                <div style="position:absolute;left:0;right:0;bottom:0;height:120px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, #07090E 100%)"></div>
                 <div class="dt-hero-content" style="position:absolute;left:40px;top:0;bottom:44px;display:flex;flex-direction:column;justify-content:center;gap:14px;max-width:560px">
                   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                     <div style="flex:0 0 auto;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:{{ h.accent }};border:1px solid {{ h.accent }};border-radius:3px;padding:3px 8px">{{ h.badge }}</div>
                     <sc-if value="{{ h.hasGenres }}" hint-placeholder-val="{{ false }}">
                       <sc-for list="{{ h.genres }}" as="g" hint-placeholder-count="0">
-                        <div style="flex:0 0 auto;font-size:10px;font-weight:600;letter-spacing:0.8px;color:#C8C0DC;background:rgba(255,255,255,0.06);border:1px solid #2A2438;border-radius:999px;padding:3px 10px">{{ g }}</div>
+                        <div style="flex:0 0 auto;font-size:10px;font-weight:600;letter-spacing:0.8px;color:#D0D5DD;background:rgba(255,255,255,0.06);border:1px solid #273042;border-radius:999px;padding:3px 10px">{{ g }}</div>
                       </sc-for>
                     </sc-if>
                   </div>
-                  <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;font-size:58px;line-height:0.98;letter-spacing:1px;color:#EDEAF4;text-transform:uppercase;text-shadow:0 4px 30px rgba(0,0,0,0.8)">{{ h.titre }}</div>
+                  <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;font-size:58px;line-height:0.98;letter-spacing:1px;color:#F5F5F7;text-transform:uppercase;text-shadow:0 4px 30px rgba(0,0,0,0.8)">{{ h.titre }}</div>
                   <sc-if value="{{ h.hasChips }}" hint-placeholder-val="{{ false }}">
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                       <sc-if value="{{ h.hasDuree }}" hint-placeholder-val="{{ false }}">
-                        <div style="flex:0 0 auto;font-size:12px;font-weight:600;color:#B8B0CC;background:rgba(255,255,255,0.05);border:1px solid #2A2438;border-radius:4px;padding:3px 8px">{{ h.duree }}</div>
+                        <div style="flex:0 0 auto;font-size:12px;font-weight:600;color:#BAC2CF;background:rgba(255,255,255,0.05);border:1px solid #273042;border-radius:4px;padding:3px 8px">{{ h.duree }}</div>
                       </sc-if>
                       <sc-if value="{{ h.hasAnnee }}" hint-placeholder-val="{{ false }}">
-                        <div style="flex:0 0 auto;font-size:12px;font-weight:600;color:#B8B0CC;background:rgba(255,255,255,0.05);border:1px solid #2A2438;border-radius:4px;padding:3px 8px">{{ h.annee }}</div>
+                        <div style="flex:0 0 auto;font-size:12px;font-weight:600;color:#BAC2CF;background:rgba(255,255,255,0.05);border:1px solid #273042;border-radius:4px;padding:3px 8px">{{ h.annee }}</div>
                       </sc-if>
                       <sc-if value="{{ h.hasRating }}" hint-placeholder-val="{{ false }}">
                         <div style="flex:0 0 auto;font-size:12px;font-weight:700;color:#FFD166;background:rgba(255,209,102,0.08);border:1px solid rgba(255,209,102,0.35);border-radius:4px;padding:3px 8px">★ {{ h.rating }}</div>
@@ -189,15 +215,15 @@ input { outline: none; }
                     </div>
                   </sc-if>
                   <sc-if value="{{ h.hasSynopsis }}" hint-placeholder-val="{{ false }}">
-                    <div style="font-size:15px;line-height:1.5;color:#B8B0CC;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ h.synopsis }}</div>
+                    <div style="font-size:15px;line-height:1.5;color:#BAC2CF;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ h.synopsis }}</div>
                   </sc-if>
                   <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
-                    <button onClick="{{ h.play }}" style="display:flex;align-items:center;gap:10px;background:linear-gradient(95deg, #FF006E, #C4005A);border:none;border-radius:8px;padding:13px 26px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;letter-spacing:2.5px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 24px rgba(255,0,110,0.35);transition:transform 0.12s, box-shadow 0.15s" style-hover="transform:translateY(-1px);box-shadow:0 0 36px rgba(255,0,110,0.55)" style-active="transform:translateY(0px)">
+                    <button onClick="{{ h.play }}" style="display:flex;align-items:center;gap:10px;background:linear-gradient(95deg, #E82967, #B91853);border:none;border-radius:8px;padding:13px 26px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;letter-spacing:2.5px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 24px rgba(232,41,103,0.35);transition:transform 0.12s, box-shadow 0.15s" style-hover="transform:translateY(-1px);box-shadow:0 0 36px rgba(232,41,103,0.55)" style-active="transform:translateY(0px)">
                       <svg width="13" height="15" viewBox="0 0 13 15"><polygon points="1,0.5 12.5,7.5 1,14.5" fill="#FFFFFF"></polygon></svg>
                       {{ h.playLabel }}
                     </button>
                     <sc-if value="{{ h.infoOn }}" hint-placeholder-val="{{ false }}">
-                      <button onClick="{{ h.infoClick }}" title="Plus d'infos" style="width:46px;height:46px;border-radius:50%;flex:0 0 auto;border:1px solid #00F0FF;background:rgba(0,240,255,0.08);color:#00F0FF;font-size:19px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(0,240,255,0.22);box-shadow:0 0 16px rgba(0,240,255,0.5)">i</button>
+                      <button onClick="{{ h.infoClick }}" title="Plus d'infos" style="width:46px;height:46px;border-radius:50%;flex:0 0 auto;border:1px solid #7657FF;background:rgba(118,87,255,0.08);color:#7657FF;font-size:19px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(118,87,255,0.22);box-shadow:0 0 16px rgba(118,87,255,0.5)">i</button>
                     </sc-if>
                   </div>
                 </div>
@@ -216,19 +242,19 @@ input { outline: none; }
             <div style="display:flex;flex-direction:column;gap:14px">
               <div style="display:flex;align-items:center;gap:12px">
                 <div style="width:4px;height:24px;background:{{ sec.accent }};box-shadow:0 0 12px {{ sec.accent }}"></div>
-                <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:28px;letter-spacing:4px;color:#EDEAF4;text-transform:uppercase">{{ sec.label }}</h2>
-                <div style="font-size:13px;font-weight:600;color:#544C68">{{ sec.count }}</div>
+                <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:28px;letter-spacing:4px;color:#F5F5F7;text-transform:uppercase">{{ sec.label }}</h2>
+                <div style="font-size:13px;font-weight:600;color:#667085">{{ sec.count }}</div>
                 <sc-if value="{{ sec.isHistory }}" hint-placeholder-val="{{ false }}">
                   <div style="flex:1"></div>
                   <sc-if value="{{ confirmingClear }}" hint-placeholder-val="{{ false }}">
                     <div style="display:flex;align-items:center;gap:10px">
-                      <div style="font-size:13px;font-weight:600;color:#B8B0CC">Effacer tout l'historique ?</div>
+                      <div style="font-size:13px;font-weight:600;color:#BAC2CF">Effacer tout l'historique ?</div>
                       <button onClick="{{ confirmClearHistory }}" style="background:rgba(255,77,109,0.12);border:1px solid #FF4D6D;border-radius:6px;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#FF4D6D;text-transform:uppercase;cursor:pointer;transition:background 0.15s" style-hover="background:rgba(255,77,109,0.28)">Oui, effacer</button>
-                      <button onClick="{{ cancelClearHistory }}" style="background:transparent;border:1px solid #2A2438;border-radius:6px;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#9A92B0;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#00F0FF;color:#00F0FF">Annuler</button>
+                      <button onClick="{{ cancelClearHistory }}" style="background:transparent;border:1px solid #273042;border-radius:6px;padding:6px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#9DA4B3;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#7657FF;color:#7657FF">Annuler</button>
                     </div>
                   </sc-if>
                   <sc-if value="{{ notConfirmingClear }}" hint-placeholder-val="{{ false }}">
-                    <button onClick="{{ askClearHistory }}" style="display:flex;align-items:center;gap:8px;background:transparent;border:1px solid #2A2438;border-radius:6px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#9A92B0;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#FF4D6D;color:#FF4D6D">
+                    <button onClick="{{ askClearHistory }}" style="display:flex;align-items:center;gap:8px;background:transparent;border:1px solid #273042;border-radius:6px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#9DA4B3;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#FF4D6D;color:#FF4D6D">
                       <svg width="13" height="14" viewBox="0 0 13 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M1 3.5h11M4.5 3.5V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M2.5 3.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6M5 6v4M8 6v4"></path></svg>
                       Supprimer l'historique
                     </button>
@@ -239,8 +265,8 @@ input { outline: none; }
               <div ref="{{ sec.rowRef }}" onScroll="{{ sec.onRowScroll }}" class="hide-scrollbar" style="display:flex;gap:16px;overflow-x:auto;padding:26px 4px 26px;scroll-behavior:smooth">
                 <sc-for list="{{ sec.items }}" as="item" hint-placeholder-count="4">
                   <div class="dt-card" onClick="{{ item.open }}" style="flex:0 0 auto;width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
-                    <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#14111E;border:1px solid #221D31" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px {{ sec.glow }};border-color:{{ sec.accent }}">
-                      <div style="position:absolute;inset:0;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
+                    <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#10141D;border:1px solid #232C3A" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px {{ sec.glow }};border-color:{{ sec.accent }}">
+                      <div style="position:absolute;inset:0;background:linear-gradient(90deg, #111722 25%, #1B2330 50%, #111722 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
                         <div style="position:absolute;inset:0">{{ item.posterEl }}</div>
                       </sc-if>
@@ -249,18 +275,18 @@ input { outline: none; }
                           <div style="flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:{{ sec.accent }};border:1px solid {{ sec.accent }};border-radius:3px;padding:2px 6px">{{ item.badge }}</div>
                           <sc-if value="{{ item.hasGenres }}" hint-placeholder-val="{{ false }}">
                             <sc-for list="{{ item.genres }}" as="g" hint-placeholder-count="0">
-                              <div style="flex:0 0 auto;font-size:9px;font-weight:600;letter-spacing:0.8px;color:#C8C0DC;background:rgba(255,255,255,0.05);border:1px solid #2A2438;border-radius:999px;padding:2px 8px">{{ g }}</div>
+                              <div style="flex:0 0 auto;font-size:9px;font-weight:600;letter-spacing:0.8px;color:#D0D5DD;background:rgba(255,255,255,0.05);border:1px solid #273042;border-radius:999px;padding:2px 8px">{{ g }}</div>
                             </sc-for>
                           </sc-if>
                         </div>
-                        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;line-height:1.1;letter-spacing:0.5px;color:#EDEAF4;text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ item.titre }}</div>
+                        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;line-height:1.1;letter-spacing:0.5px;color:#F5F5F7;text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ item.titre }}</div>
                         <sc-if value="{{ item.hasChips }}" hint-placeholder-val="{{ false }}">
                           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                             <sc-if value="{{ item.hasDuree }}" hint-placeholder-val="{{ false }}">
-                              <div style="flex:0 0 auto;font-size:10px;font-weight:600;color:#B8B0CC;background:rgba(255,255,255,0.05);border:1px solid #2A2438;border-radius:4px;padding:2px 6px">{{ item.duree }}</div>
+                              <div style="flex:0 0 auto;font-size:10px;font-weight:600;color:#BAC2CF;background:rgba(255,255,255,0.05);border:1px solid #273042;border-radius:4px;padding:2px 6px">{{ item.duree }}</div>
                             </sc-if>
                             <sc-if value="{{ item.hasAnnee }}" hint-placeholder-val="{{ false }}">
-                              <div style="flex:0 0 auto;font-size:10px;font-weight:600;color:#B8B0CC;background:rgba(255,255,255,0.05);border:1px solid #2A2438;border-radius:4px;padding:2px 6px">{{ item.annee }}</div>
+                              <div style="flex:0 0 auto;font-size:10px;font-weight:600;color:#BAC2CF;background:rgba(255,255,255,0.05);border:1px solid #273042;border-radius:4px;padding:2px 6px">{{ item.annee }}</div>
                             </sc-if>
                             <sc-if value="{{ item.hasRating }}" hint-placeholder-val="{{ false }}">
                               <div style="flex:0 0 auto;font-size:10px;font-weight:700;color:#FFD166;background:rgba(255,209,102,0.08);border:1px solid rgba(255,209,102,0.35);border-radius:4px;padding:2px 6px">★ {{ item.rating }}</div>
@@ -268,28 +294,28 @@ input { outline: none; }
                           </div>
                         </sc-if>
                         <sc-if value="{{ item.hasSynopsis }}" hint-placeholder-val="{{ false }}">
-                          <div style="font-size:11px;line-height:1.4;color:#B8B0CC;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ item.synopsis }}</div>
+                          <div style="font-size:11px;line-height:1.4;color:#BAC2CF;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ item.synopsis }}</div>
                         </sc-if>
                         <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
-                          <button onClick="{{ item.addToList }}" title="{{ item.addTitle }}" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #FF006E;background:{{ item.addBg }};color:{{ item.addColor }};box-shadow:{{ item.addGlow }};font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s, color 0.15s" style-hover="box-shadow:0 0 12px rgba(255,0,110,0.5)">{{ item.addLabel }}</button>
-                          <button onClick="{{ item.infoClick }}" title="Plus d'infos" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #00F0FF;background:rgba(0,240,255,0.1);color:#00F0FF;font-size:13px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(0,240,255,0.25);box-shadow:0 0 12px rgba(0,240,255,0.5)">i</button>
+                          <button onClick="{{ item.addToList }}" title="{{ item.addTitle }}" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #E82967;background:{{ item.addBg }};color:{{ item.addColor }};box-shadow:{{ item.addGlow }};font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s, color 0.15s" style-hover="box-shadow:0 0 12px rgba(232,41,103,0.5)">{{ item.addLabel }}</button>
+                          <button onClick="{{ item.infoClick }}" title="Plus d'infos" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #7657FF;background:rgba(118,87,255,0.1);color:#7657FF;font-size:13px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(118,87,255,0.25);box-shadow:0 0 12px rgba(118,87,255,0.5)">i</button>
                         </div>
                       </div>
                     </div>
                     <sc-if value="{{ titlesOn }}" hint-placeholder-val="{{ true }}">
-                      <div style="font-size:14px;font-weight:600;color:#B8B0CC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.titre }}</div>
+                      <div style="font-size:14px;font-weight:600;color:#BAC2CF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.titre }}</div>
                     </sc-if>
                   </div>
                 </sc-for>
               </div>
               <sc-if value="{{ sec.canLeft }}" hint-placeholder-val="{{ false }}">
-                <button onClick="{{ sec.scrollLeftFn }}" aria-label="Défiler vers la gauche" class="row-arrow" style="position:absolute;left:-14px;top:50%;transform:translateY(-50%);z-index:5;width:42px;height:42px;border-radius:50%;border:1px solid #2A2438;background:rgba(13,11,20,0.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="background:rgba(13,11,20,0.92);border-color:{{ sec.accent }};box-shadow:0 0 16px {{ sec.glow }}">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#EDEAF4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,2 4,7 9,12"></polyline></svg>
+                <button onClick="{{ sec.scrollLeftFn }}" aria-label="Défiler vers la gauche" class="row-arrow" style="position:absolute;left:-14px;top:50%;transform:translateY(-50%);z-index:5;width:42px;height:42px;border-radius:50%;border:1px solid #273042;background:rgba(13,11,20,0.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="background:rgba(13,11,20,0.92);border-color:{{ sec.accent }};box-shadow:0 0 16px {{ sec.glow }}">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#F5F5F7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,2 4,7 9,12"></polyline></svg>
                 </button>
               </sc-if>
               <sc-if value="{{ sec.canRight }}" hint-placeholder-val="{{ false }}">
-                <button onClick="{{ sec.scrollRightFn }}" aria-label="Défiler vers la droite" class="row-arrow" style="position:absolute;right:-14px;top:50%;transform:translateY(-50%);z-index:5;width:42px;height:42px;border-radius:50%;border:1px solid #2A2438;background:rgba(13,11,20,0.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="background:rgba(13,11,20,0.92);border-color:{{ sec.accent }};box-shadow:0 0 16px {{ sec.glow }}">
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#EDEAF4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5,2 10,7 5,12"></polyline></svg>
+                <button onClick="{{ sec.scrollRightFn }}" aria-label="Défiler vers la droite" class="row-arrow" style="position:absolute;right:-14px;top:50%;transform:translateY(-50%);z-index:5;width:42px;height:42px;border-radius:50%;border:1px solid #273042;background:rgba(13,11,20,0.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="background:rgba(13,11,20,0.92);border-color:{{ sec.accent }};box-shadow:0 0 16px {{ sec.glow }}">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#F5F5F7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="5,2 10,7 5,12"></polyline></svg>
                 </button>
               </sc-if>
               </div>
@@ -300,16 +326,16 @@ input { outline: none; }
         <sc-if value="{{ showCatalogue }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:20px;padding:32px 40px 64px">
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-              <div style="width:4px;height:24px;background:#FF006E;box-shadow:0 0 12px #FF006E"></div>
-              <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:28px;letter-spacing:4px;color:#EDEAF4;text-transform:uppercase">Catalogue</h2>
-              <div style="font-size:13px;font-weight:600;color:#544C68">{{ catalogueCount }}</div>
+              <div style="width:4px;height:24px;background:#E82967;box-shadow:0 0 12px #E82967"></div>
+              <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:28px;letter-spacing:4px;color:#F5F5F7;text-transform:uppercase">Catalogue</h2>
+              <div style="font-size:13px;font-weight:600;color:#667085">{{ catalogueCount }}</div>
               <div style="flex:1"></div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <sc-for list="{{ catTypeFilters }}" as="f" hint-placeholder-count="4">
-                  <button onClick="{{ f.go }}" style="background:{{ f.bg }};border:1px solid {{ f.border }};border-radius:999px;padding:7px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:{{ f.color }};text-transform:uppercase;cursor:pointer;box-shadow:{{ f.glow }};transition:color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s" style-hover="border-color:#FF006E">{{ f.label }}</button>
+                  <button onClick="{{ f.go }}" style="background:{{ f.bg }};border:1px solid {{ f.border }};border-radius:999px;padding:7px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:{{ f.color }};text-transform:uppercase;cursor:pointer;box-shadow:{{ f.glow }};transition:color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s" style-hover="border-color:#E82967">{{ f.label }}</button>
                 </sc-for>
                 <sc-if value="{{ hasGenreFilter }}" hint-placeholder-val="{{ false }}">
-                  <select value="{{ catGenre }}" onChange="{{ onCatGenre }}" style="background:#14111E;border:1px solid #2A2438;border-radius:999px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:1.5px;color:#C8C0DC;text-transform:uppercase;cursor:pointer;outline:none">
+                  <select value="{{ catGenre }}" onChange="{{ onCatGenre }}" style="background:#10141D;border:1px solid #273042;border-radius:999px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:1.5px;color:#D0D5DD;text-transform:uppercase;cursor:pointer;outline:none">
                     <sc-for list="{{ genreOptions }}" as="g" hint-placeholder-count="0">
                       <option value="{{ g }}">{{ g }}</option>
                     </sc-for>
@@ -321,39 +347,39 @@ input { outline: none; }
               <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(172px, 1fr));gap:26px 16px;padding:26px 4px">
                 <sc-for list="{{ catalogueItems }}" as="item" hint-placeholder-count="8">
                   <div class="dt-card" onClick="{{ item.open }}" style="width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
-                    <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#14111E;border:1px solid #221D31" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(255,0,110,0.3);border-color:#FF006E">
-                      <div style="position:absolute;inset:0;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
+                    <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#10141D;border:1px solid #232C3A" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(232,41,103,0.3);border-color:#E82967">
+                      <div style="position:absolute;inset:0;background:linear-gradient(90deg, #111722 25%, #1B2330 50%, #111722 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
                         <div style="position:absolute;inset:0">{{ item.posterEl }}</div>
                       </sc-if>
                       <div class="pinfo" style="position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:6px;padding:44px 12px 12px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, rgba(13,11,20,0.88) 34%, rgba(13,11,20,0.97) 100%)">
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                          <div style="flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#FF006E;border:1px solid #FF006E;border-radius:3px;padding:2px 6px">{{ item.badge }}</div>
+                          <div style="flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#E82967;border:1px solid #E82967;border-radius:3px;padding:2px 6px">{{ item.badge }}</div>
                           <sc-if value="{{ item.hasGenres }}" hint-placeholder-val="{{ false }}">
                             <sc-for list="{{ item.genres }}" as="g" hint-placeholder-count="0">
-                              <div style="flex:0 0 auto;font-size:9px;font-weight:600;letter-spacing:0.8px;color:#C8C0DC;background:rgba(255,255,255,0.05);border:1px solid #2A2438;border-radius:999px;padding:2px 8px">{{ g }}</div>
+                              <div style="flex:0 0 auto;font-size:9px;font-weight:600;letter-spacing:0.8px;color:#D0D5DD;background:rgba(255,255,255,0.05);border:1px solid #273042;border-radius:999px;padding:2px 8px">{{ g }}</div>
                             </sc-for>
                           </sc-if>
                         </div>
-                        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;line-height:1.1;letter-spacing:0.5px;color:#EDEAF4;text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ item.titre }}</div>
+                        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;line-height:1.1;letter-spacing:0.5px;color:#F5F5F7;text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ item.titre }}</div>
                         <sc-if value="{{ item.hasSynopsis }}" hint-placeholder-val="{{ false }}">
-                          <div style="font-size:11px;line-height:1.4;color:#B8B0CC;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ item.synopsis }}</div>
+                          <div style="font-size:11px;line-height:1.4;color:#BAC2CF;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ item.synopsis }}</div>
                         </sc-if>
                         <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
-                          <button onClick="{{ item.addToList }}" title="{{ item.addTitle }}" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #FF006E;background:{{ item.addBg }};color:{{ item.addColor }};box-shadow:{{ item.addGlow }};font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s, color 0.15s" style-hover="box-shadow:0 0 12px rgba(255,0,110,0.5)">{{ item.addLabel }}</button>
-                          <button onClick="{{ item.infoClick }}" title="Plus d'infos" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #00F0FF;background:rgba(0,240,255,0.1);color:#00F0FF;font-size:13px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(0,240,255,0.25);box-shadow:0 0 12px rgba(0,240,255,0.5)">i</button>
+                          <button onClick="{{ item.addToList }}" title="{{ item.addTitle }}" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #E82967;background:{{ item.addBg }};color:{{ item.addColor }};box-shadow:{{ item.addGlow }};font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s, color 0.15s" style-hover="box-shadow:0 0 12px rgba(232,41,103,0.5)">{{ item.addLabel }}</button>
+                          <button onClick="{{ item.infoClick }}" title="Plus d'infos" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #7657FF;background:rgba(118,87,255,0.1);color:#7657FF;font-size:13px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(118,87,255,0.25);box-shadow:0 0 12px rgba(118,87,255,0.5)">i</button>
                         </div>
                       </div>
                     </div>
-                    <div style="font-size:14px;font-weight:600;color:#B8B0CC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.titre }}</div>
+                    <div style="font-size:14px;font-weight:600;color:#BAC2CF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.titre }}</div>
                   </div>
                 </sc-for>
               </div>
             </sc-if>
             <sc-if value="{{ noCatalogueItems }}" hint-placeholder-val="{{ false }}">
               <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:70px 20px">
-                <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:2px;color:#7A7290;text-transform:uppercase">Aucun titre</div>
-                <div style="font-size:14px;color:#544C68">Aucun titre ne correspond à ces filtres.</div>
+                <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:2px;color:#848D9C;text-transform:uppercase">Aucun titre</div>
+                <div style="font-size:14px;color:#667085">Aucun titre ne correspond à ces filtres.</div>
               </div>
             </sc-if>
           </div>
@@ -361,59 +387,76 @@ input { outline: none; }
         <sc-if value="{{ hasSearch }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:20px;padding:32px 40px 64px">
             <div style="display:flex;align-items:center;gap:12px">
-              <div style="width:4px;height:24px;background:#00F0FF;box-shadow:0 0 12px #00F0FF"></div>
-              <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:28px;letter-spacing:4px;color:#EDEAF4;text-transform:uppercase">Résultats pour «&nbsp;{{ searchQuery }}&nbsp;»</h2>
-              <div style="font-size:13px;font-weight:600;color:#544C68">{{ searchCount }}</div>
+              <div style="width:4px;height:24px;background:#7657FF;box-shadow:0 0 12px #7657FF"></div>
+              <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:28px;letter-spacing:4px;color:#F5F5F7;text-transform:uppercase">Résultats pour «&nbsp;{{ searchQuery }}&nbsp;»</h2>
+              <div style="font-size:13px;font-weight:600;color:#667085">{{ searchCount }}</div>
             </div>
             <sc-if value="{{ hasResults }}" hint-placeholder-val="{{ false }}">
               <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(172px, 1fr));gap:26px 16px;padding:26px 4px">
                 <sc-for list="{{ searchResults }}" as="item" hint-placeholder-count="4">
                   <div class="dt-card" onClick="{{ item.open }}" style="width:172px;display:flex;flex-direction:column;gap:8px;cursor:pointer">
-                    <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#14111E;border:1px solid #221D31" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(0,240,255,0.3);border-color:#00F0FF">
-                      <div style="position:absolute;inset:0;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
+                    <div class="pcard" style="width:172px;height:258px;border-radius:10px;overflow:hidden;background:#10141D;border:1px solid #232C3A" style-hover="box-shadow:0 12px 40px rgba(0,0,0,0.7), 0 0 24px rgba(118,87,255,0.3);border-color:#7657FF">
+                      <div style="position:absolute;inset:0;background:linear-gradient(90deg, #111722 25%, #1B2330 50%, #111722 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
                         <div style="position:absolute;inset:0">{{ item.posterEl }}</div>
                       </sc-if>
                       <div class="pinfo" style="position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:6px;padding:44px 12px 12px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, rgba(13,11,20,0.88) 34%, rgba(13,11,20,0.97) 100%)">
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                          <div style="flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#00F0FF;border:1px solid #00F0FF;border-radius:3px;padding:2px 6px">{{ item.badge }}</div>
+                          <div style="flex:0 0 auto;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#7657FF;border:1px solid #7657FF;border-radius:3px;padding:2px 6px">{{ item.badge }}</div>
                         </div>
-                        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;line-height:1.1;letter-spacing:0.5px;color:#EDEAF4;text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ item.titre }}</div>
+                        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;line-height:1.1;letter-spacing:0.5px;color:#F5F5F7;text-transform:uppercase;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ item.titre }}</div>
                         <sc-if value="{{ item.hasSynopsis }}" hint-placeholder-val="{{ false }}">
-                          <div style="font-size:11px;line-height:1.4;color:#B8B0CC;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ item.synopsis }}</div>
+                          <div style="font-size:11px;line-height:1.4;color:#BAC2CF;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">{{ item.synopsis }}</div>
                         </sc-if>
                         <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
-                          <button onClick="{{ item.addToList }}" title="{{ item.addTitle }}" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #FF006E;background:{{ item.addBg }};color:{{ item.addColor }};box-shadow:{{ item.addGlow }};font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s, color 0.15s" style-hover="box-shadow:0 0 12px rgba(255,0,110,0.5)">{{ item.addLabel }}</button>
-                          <button onClick="{{ item.infoClick }}" title="Plus d'infos" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #00F0FF;background:rgba(0,240,255,0.1);color:#00F0FF;font-size:13px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(0,240,255,0.25);box-shadow:0 0 12px rgba(0,240,255,0.5)">i</button>
+                          <button onClick="{{ item.addToList }}" title="{{ item.addTitle }}" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #E82967;background:{{ item.addBg }};color:{{ item.addColor }};box-shadow:{{ item.addGlow }};font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s, color 0.15s" style-hover="box-shadow:0 0 12px rgba(232,41,103,0.5)">{{ item.addLabel }}</button>
+                          <button onClick="{{ item.infoClick }}" title="Plus d'infos" style="width:28px;height:28px;border-radius:50%;flex:0 0 auto;border:1px solid #7657FF;background:rgba(118,87,255,0.1);color:#7657FF;font-size:13px;font-weight:700;font-style:italic;font-family:'Barlow Condensed',sans-serif;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background 0.15s, box-shadow 0.15s" style-hover="background:rgba(118,87,255,0.25);box-shadow:0 0 12px rgba(118,87,255,0.5)">i</button>
                         </div>
                       </div>
                     </div>
-                    <div style="font-size:14px;font-weight:600;color:#B8B0CC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.titre }}</div>
+                    <div style="font-size:14px;font-weight:600;color:#BAC2CF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ item.titre }}</div>
                   </div>
                 </sc-for>
               </div>
             </sc-if>
             <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
               <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:70px 20px">
-                <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:2px;color:#7A7290;text-transform:uppercase">Aucun résultat</div>
-                <div style="font-size:14px;color:#544C68">Aucun résultat trouvé pour «&nbsp;{{ searchQuery }}&nbsp;»</div>
+                <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:2px;color:#848D9C;text-transform:uppercase">Aucun résultat</div>
+                <div style="font-size:14px;color:#667085">Aucun résultat trouvé pour «&nbsp;{{ searchQuery }}&nbsp;»</div>
               </div>
             </sc-if>
           </div>
         </sc-if>
       </sc-if>
+      <nav class="dts-mobile-nav" aria-label="Navigation principale">
+        <button onClick="{{ goAccueil }}" style="color:{{ mobileAccueilColor }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5.5 10.5V20h13v-9.5"></path></svg><span>Accueil</span>
+        </button>
+        <button onClick="{{ goFilms }}" style="color:{{ mobileFilmsColor }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="2"></rect><path d="m3 10 4-4 4 4 4-4 4 4"></path></svg><span>Films</span>
+        </button>
+        <button onClick="{{ goSeries }}" style="color:{{ mobileSeriesColor }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4"></path></svg><span>Séries</span>
+        </button>
+        <button onClick="{{ goAnime }}" style="color:{{ mobileAnimeColor }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.1 5.1L20 10l-4.5 3.8.9 5.8L12 16.8l-4.4 2.8.9-5.8L4 10l5.9-1.9L12 3Z"></path></svg><span>Anime</span>
+        </button>
+        <button onClick="{{ goCatalogue }}" style="color:{{ mobileCatalogueColor }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg><span>Catalogue</span>
+        </button>
+      </nav>
     </div>
   </sc-if>
 
   <!-- ============ SERIES / ANIME DETAIL ============ -->
   <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
-    <div style="min-height:100vh;padding:24px 40px 64px;display:flex;flex-direction:column;gap:28px">
+    <div class="dts-detail-page" style="min-height:100vh;padding:24px 40px 64px;display:flex;flex-direction:column;gap:28px">
       <div>
-        <button onClick="{{ backToLibrary }}" style="background:transparent;border:1px solid #2A2438;border-radius:6px;padding:9px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#9A92B0;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#00F0FF;color:#00F0FF">← Bibliothèque</button>
+        <button onClick="{{ backToLibrary }}" style="background:transparent;border:1px solid #273042;border-radius:6px;padding:9px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#9DA4B3;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#7657FF;color:#7657FF">← Bibliothèque</button>
       </div>
       <div style="display:flex;gap:32px;flex-wrap:wrap">
-        <div style="position:relative;flex:0 0 auto;width:220px;height:330px;border-radius:12px;overflow:hidden;background:#14111E;border:1px solid #221D31;box-shadow:0 12px 40px rgba(0,0,0,0.6)">
-          <div style="position:absolute;inset:0;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
+        <div style="position:relative;flex:0 0 auto;width:220px;height:330px;border-radius:12px;overflow:hidden;background:#10141D;border:1px solid #232C3A;box-shadow:0 12px 40px rgba(0,0,0,0.6)">
+          <div style="position:absolute;inset:0;background:linear-gradient(90deg, #111722 25%, #1B2330 50%, #111722 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
           <sc-if value="{{ detailPosterUrl }}" hint-placeholder-val="{{ false }}">
             <div style="position:absolute;inset:0">{{ detailPosterEl }}</div>
           </sc-if>
@@ -421,22 +464,22 @@ input { outline: none; }
         <div style="flex:1;min-width:320px;display:flex;flex-direction:column;gap:20px">
           <div style="display:flex;flex-direction:column;gap:8px">
             <div style="font-size:12px;font-weight:700;letter-spacing:3px;color:{{ detailAccent }};text-transform:uppercase">{{ detailKind }}</div>
-            <h1 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:52px;line-height:1;letter-spacing:1px;color:#EDEAF4;text-transform:uppercase">{{ detailTitle }}</h1>
+            <h1 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:52px;line-height:1;letter-spacing:1px;color:#F5F5F7;text-transform:uppercase">{{ detailTitle }}</h1>
           </div>
           <div style="display:flex;flex-direction:column;gap:22px">
             <sc-for list="{{ detailSeasons }}" as="season" hint-placeholder-count="1">
               <div style="display:flex;flex-direction:column;gap:10px">
                 <div style="display:flex;align-items:center;gap:10px">
                   <div style="width:3px;height:18px;background:{{ detailAccent }};box-shadow:0 0 10px {{ detailAccent }}"></div>
-                  <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;letter-spacing:2px;color:#D8D2E8;text-transform:uppercase">{{ season.nom }}</div>
+                  <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;letter-spacing:2px;color:#E4E7EC;text-transform:uppercase">{{ season.nom }}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:6px">
                   <sc-for list="{{ season.episodes }}" as="ep" hint-placeholder-count="3">
-                    <div onClick="{{ ep.play }}" style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:8px;background:#14111E;border:1px solid #1E1A2C;cursor:pointer;transition:border-color 0.15s, background 0.15s, transform 0.12s" style-hover="border-color:{{ detailAccent }};background:#181322;transform:translateX(4px)">
+                    <div onClick="{{ ep.play }}" style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:8px;background:#10141D;border:1px solid #202735;cursor:pointer;transition:border-color 0.15s, background 0.15s, transform 0.12s" style-hover="border-color:{{ detailAccent }};background:#171C27;transform:translateX(4px)">
                       <div style="width:30px;height:30px;border-radius:50%;flex:0 0 auto;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center">
                         <svg width="10" height="12" viewBox="0 0 10 12"><polygon points="1,0.5 9.5,6 1,11.5" fill="{{ detailAccent }}"></polygon></svg>
                       </div>
-                      <div style="font-size:15px;font-weight:500;color:#C8C0DC">{{ ep.nom }}</div>
+                      <div style="font-size:15px;font-weight:500;color:#D0D5DD">{{ ep.nom }}</div>
                     </div>
                   </sc-for>
                 </div>
@@ -450,58 +493,58 @@ input { outline: none; }
 
   <!-- ============ ADMIN ============ -->
   <sc-if value="{{ isAdminView }}" hint-placeholder-val="{{ false }}">
-    <div style="min-height:100vh;padding:24px 40px 64px;display:flex;flex-direction:column;gap:32px;max-width:860px">
+    <div class="dts-admin-page" style="min-height:100vh;padding:24px 40px 64px;display:flex;flex-direction:column;gap:32px;max-width:860px">
       <div style="display:flex;align-items:center;gap:20px">
-        <button onClick="{{ backToLibrary }}" style="background:transparent;border:1px solid #2A2438;border-radius:6px;padding:9px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#9A92B0;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#00F0FF;color:#00F0FF">← Bibliothèque</button>
-        <h1 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;font-size:40px;letter-spacing:2px;color:#EDEAF4;text-transform:uppercase">Admin</h1>
+        <button onClick="{{ backToLibrary }}" style="background:transparent;border:1px solid #273042;border-radius:6px;padding:9px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#9DA4B3;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#7657FF;color:#7657FF">← Bibliothèque</button>
+        <h1 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-style:italic;font-size:40px;letter-spacing:2px;color:#F5F5F7;text-transform:uppercase">Admin</h1>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:14px;padding:24px;border-radius:12px;background:#14111E;border:1px solid #221D31">
+      <div style="display:flex;flex-direction:column;gap:14px;padding:24px;border-radius:12px;background:#10141D;border:1px solid #232C3A">
         <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:4px;height:20px;background:#FF006E;box-shadow:0 0 12px #FF006E"></div>
-          <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:3px;color:#EDEAF4;text-transform:uppercase">Ajouter un utilisateur</h2>
+          <div style="width:4px;height:20px;background:#E82967;box-shadow:0 0 12px #E82967"></div>
+          <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:3px;color:#F5F5F7;text-transform:uppercase">Ajouter un utilisateur</h2>
         </div>
         <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
           <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px">
-            <label style="font-size:11px;font-weight:600;letter-spacing:2.5px;color:#7A7290;text-transform:uppercase">Pseudo</label>
-            <input type="text" value="{{ newUserPseudo }}" onChange="{{ onNewUserPseudo }}" onKeyDown="{{ onNewUserKey }}" autoComplete="off" style="background:#0D0B14;border:1px solid #2A2438;border-radius:8px;padding:12px 14px;font-size:15px;color:#EDEAF4;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s" style-focus="border-color:#FF006E;box-shadow:0 0 0 1px #FF006E, 0 0 14px rgba(255,0,110,0.25)"></input>
+            <label style="font-size:11px;font-weight:600;letter-spacing:2.5px;color:#848D9C;text-transform:uppercase">Pseudo</label>
+            <input type="text" value="{{ newUserPseudo }}" onChange="{{ onNewUserPseudo }}" onKeyDown="{{ onNewUserKey }}" autoComplete="off" style="background:#07090E;border:1px solid #273042;border-radius:8px;padding:12px 14px;font-size:15px;color:#F5F5F7;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s" style-focus="border-color:#E82967;box-shadow:0 0 0 1px #E82967, 0 0 14px rgba(232,41,103,0.25)"></input>
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px">
-            <label style="font-size:11px;font-weight:600;letter-spacing:2.5px;color:#7A7290;text-transform:uppercase">Mot de passe</label>
-            <input type="password" value="{{ newUserPassword }}" onChange="{{ onNewUserPassword }}" onKeyDown="{{ onNewUserKey }}" autoComplete="new-password" style="background:#0D0B14;border:1px solid #2A2438;border-radius:8px;padding:12px 14px;font-size:15px;color:#EDEAF4;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s" style-focus="border-color:#00F0FF;box-shadow:0 0 0 1px #00F0FF, 0 0 14px rgba(0,240,255,0.25)"></input>
+            <label style="font-size:11px;font-weight:600;letter-spacing:2.5px;color:#848D9C;text-transform:uppercase">Mot de passe</label>
+            <input type="password" value="{{ newUserPassword }}" onChange="{{ onNewUserPassword }}" onKeyDown="{{ onNewUserKey }}" autoComplete="new-password" style="background:#07090E;border:1px solid #273042;border-radius:8px;padding:12px 14px;font-size:15px;color:#F5F5F7;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s" style-focus="border-color:#7657FF;box-shadow:0 0 0 1px #7657FF, 0 0 14px rgba(118,87,255,0.25)"></input>
           </div>
-          <button onClick="{{ addUser }}" style="background:linear-gradient(95deg, #FF006E, #C4005A);border:none;border-radius:8px;padding:13px 24px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;white-space:nowrap;box-shadow:0 0 18px rgba(255,0,110,0.3);transition:transform 0.12s, box-shadow 0.15s" style-hover="transform:translateY(-1px);box-shadow:0 0 28px rgba(255,0,110,0.5)" style-active="transform:translateY(0px)">{{ addUserLabel }}</button>
+          <button onClick="{{ addUser }}" style="background:linear-gradient(95deg, #E82967, #B91853);border:none;border-radius:8px;padding:13px 24px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;white-space:nowrap;box-shadow:0 0 18px rgba(232,41,103,0.3);transition:transform 0.12s, box-shadow 0.15s" style-hover="transform:translateY(-1px);box-shadow:0 0 28px rgba(232,41,103,0.5)" style-active="transform:translateY(0px)">{{ addUserLabel }}</button>
         </div>
       </div>
 
       <div style="display:flex;flex-direction:column;gap:14px">
         <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:4px;height:20px;background:#00F0FF;box-shadow:0 0 12px #00F0FF"></div>
-          <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:3px;color:#EDEAF4;text-transform:uppercase">Utilisateurs</h2>
-          <div style="font-size:13px;font-weight:600;color:#544C68">{{ usersCount }}</div>
+          <div style="width:4px;height:20px;background:#7657FF;box-shadow:0 0 12px #7657FF"></div>
+          <h2 style="margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:3px;color:#F5F5F7;text-transform:uppercase">Utilisateurs</h2>
+          <div style="font-size:13px;font-weight:600;color:#667085">{{ usersCount }}</div>
         </div>
 
         <sc-if value="{{ usersLoading }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:8px">
             <sc-for list="{{ skeletonRows }}" as="r" hint-placeholder-count="3">
-              <div style="height:54px;border-radius:8px;background:linear-gradient(90deg, #16121F 25%, #201A2E 50%, #16121F 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
+              <div style="height:54px;border-radius:8px;background:linear-gradient(90deg, #111722 25%, #1B2330 50%, #111722 75%);background-size:800px 100%;animation:shimmer 1.4s linear infinite"></div>
             </sc-for>
           </div>
         </sc-if>
 
         <sc-if value="{{ usersError }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;align-items:center;gap:16px">
-            <div style="color:#FF4D94;font-size:14px;font-weight:500">{{ usersError }}</div>
-            <button onClick="{{ loadUsers }}" style="background:transparent;border:1px solid #FF006E;border-radius:6px;padding:8px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#FF006E;text-transform:uppercase;cursor:pointer">Réessayer</button>
+            <div style="color:#FF6B98;font-size:14px;font-weight:500">{{ usersError }}</div>
+            <button onClick="{{ loadUsers }}" style="background:transparent;border:1px solid #E82967;border-radius:6px;padding:8px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;color:#E82967;text-transform:uppercase;cursor:pointer">Réessayer</button>
           </div>
         </sc-if>
 
         <div style="display:flex;flex-direction:column;gap:8px">
           <sc-for list="{{ users }}" as="u" hint-placeholder-count="0">
-            <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-radius:8px;background:#14111E;border:1px solid #1E1A2C;transition:border-color 0.15s" style-hover="border-color:#2A2438">
-              <div style="width:34px;height:34px;border-radius:50%;flex:0 0 auto;background:linear-gradient(135deg, rgba(255,0,110,0.25), rgba(0,240,255,0.25));border:1px solid #2A2438;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;color:#EDEAF4;text-transform:uppercase">{{ u.initial }}</div>
-              <div style="flex:1;font-size:15px;font-weight:600;color:#C8C0DC">{{ u.pseudo }}</div>
-              <button onClick="{{ u.askDelete }}" style="background:transparent;border:1px solid #2A2438;border-radius:6px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:2px;color:#9A92B0;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#FF4D4D;color:#FF4D4D">Supprimer</button>
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-radius:8px;background:#10141D;border:1px solid #202735;transition:border-color 0.15s" style-hover="border-color:#273042">
+              <div style="width:34px;height:34px;border-radius:50%;flex:0 0 auto;background:linear-gradient(135deg, rgba(232,41,103,0.25), rgba(118,87,255,0.25));border:1px solid #273042;display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;color:#F5F5F7;text-transform:uppercase">{{ u.initial }}</div>
+              <div style="flex:1;font-size:15px;font-weight:600;color:#D0D5DD">{{ u.pseudo }}</div>
+              <button onClick="{{ u.askDelete }}" style="background:transparent;border:1px solid #273042;border-radius:6px;padding:7px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:2px;color:#9DA4B3;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#FF4D4D;color:#FF4D4D">Supprimer</button>
             </div>
           </sc-for>
         </div>
@@ -512,11 +555,11 @@ input { outline: none; }
   <!-- confirm delete modal -->
   <sc-if value="{{ confirmPseudo }}" hint-placeholder-val="{{ false }}">
     <div style="position:fixed;inset:0;z-index:80;background:rgba(13,11,20,0.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center" onClick="{{ cancelDelete }}">
-      <div style="width:380px;max-width:88vw;padding:28px;border-radius:14px;background:#14111E;border:1px solid #2A2438;box-shadow:0 24px 80px rgba(0,0,0,0.7), 0 0 40px rgba(255,0,110,0.12);display:flex;flex-direction:column;gap:18px" onClick="{{ stopClick }}">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;letter-spacing:2px;color:#EDEAF4;text-transform:uppercase">Supprimer l'utilisateur ?</div>
-        <div style="font-size:15px;color:#9A92B0;line-height:1.5">« <span style="color:#FF4D94;font-weight:600">{{ confirmPseudo }}</span> » perdra définitivement son accès.</div>
+      <div style="width:380px;max-width:88vw;padding:28px;border-radius:14px;background:#10141D;border:1px solid #273042;box-shadow:0 24px 80px rgba(0,0,0,0.7), 0 0 40px rgba(232,41,103,0.12);display:flex;flex-direction:column;gap:18px" onClick="{{ stopClick }}">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;letter-spacing:2px;color:#F5F5F7;text-transform:uppercase">Supprimer l'utilisateur ?</div>
+        <div style="font-size:15px;color:#9DA4B3;line-height:1.5">« <span style="color:#FF6B98;font-weight:600">{{ confirmPseudo }}</span> » perdra définitivement son accès.</div>
         <div style="display:flex;gap:12px;justify-content:flex-end">
-          <button onClick="{{ cancelDelete }}" style="background:transparent;border:1px solid #2A2438;border-radius:6px;padding:10px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#9A92B0;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#7A7290;color:#EDEAF4">Annuler</button>
+          <button onClick="{{ cancelDelete }}" style="background:transparent;border:1px solid #273042;border-radius:6px;padding:10px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#9DA4B3;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#848D9C;color:#F5F5F7">Annuler</button>
           <button onClick="{{ confirmDelete }}" style="background:linear-gradient(95deg, #FF2D55, #C4001F);border:none;border-radius:6px;padding:10px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 18px rgba(255,45,85,0.35)" style-hover="box-shadow:0 0 28px rgba(255,45,85,0.55)">{{ deleteLabel }}</button>
         </div>
       </div>
@@ -526,7 +569,7 @@ input { outline: none; }
   <!-- toasts -->
   <div style="position:fixed;bottom:24px;right:24px;z-index:100;display:flex;flex-direction:column;gap:10px;pointer-events:none">
     <sc-for list="{{ toasts }}" as="t" hint-placeholder-count="0">
-      <div style="display:flex;align-items:center;gap:10px;padding:13px 18px;border-radius:8px;background:#14111E;border:1px solid {{ t.accent }};box-shadow:0 8px 30px rgba(0,0,0,0.6), 0 0 18px {{ t.glow }};color:#EDEAF4;font-size:14px;font-weight:600;max-width:340px">
+      <div style="display:flex;align-items:center;gap:10px;padding:13px 18px;border-radius:8px;background:#10141D;border:1px solid {{ t.accent }};box-shadow:0 8px 30px rgba(0,0,0,0.6), 0 0 18px {{ t.glow }};color:#F5F5F7;font-size:14px;font-weight:600;max-width:340px">
         <div style="width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:{{ t.accent }};box-shadow:0 0 8px {{ t.accent }}"></div>
         {{ t.msg }}
       </div>
@@ -536,71 +579,71 @@ input { outline: none; }
   <!-- ============ PRÉPARATION AVANT LECTURE ============ -->
   <sc-if value="{{ playerSetupOpen }}" hint-placeholder-val="{{ false }}">
     <div style="position:fixed;inset:0;z-index:90;background:rgba(8,6,13,0.88);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:22px" onClick="{{ cancelPlayerSetup }}">
-      <div style="width:560px;max-width:94vw;max-height:90vh;overflow:auto;padding:30px;border-radius:16px;background:linear-gradient(145deg,#171321,#100D18);border:1px solid #342B48;box-shadow:0 28px 90px rgba(0,0,0,0.78),0 0 45px rgba(255,0,110,0.13);display:flex;flex-direction:column;gap:22px" onClick="{{ stopClick }}">
+      <div class="dts-setup-card" style="width:560px;max-width:94vw;max-height:90vh;overflow:auto;padding:30px;border-radius:16px;background:linear-gradient(145deg,#171C27,#0B0E14);border:1px solid #354057;box-shadow:0 28px 90px rgba(0,0,0,0.78),0 0 45px rgba(232,41,103,0.13);display:flex;flex-direction:column;gap:22px" onClick="{{ stopClick }}">
         <div style="display:flex;align-items:flex-start;gap:16px">
-          <div style="width:46px;height:46px;border-radius:12px;flex:0 0 auto;background:linear-gradient(135deg,rgba(255,0,110,0.22),rgba(0,240,255,0.16));border:1px solid #3A304E;display:flex;align-items:center;justify-content:center">
-            <svg width="22" height="22" viewBox="0 0 24 24"><polygon points="8,5 20,12 8,19" fill="#FF4D94"></polygon></svg>
+          <div style="width:46px;height:46px;border-radius:12px;flex:0 0 auto;background:linear-gradient(135deg,rgba(232,41,103,0.22),rgba(118,87,255,0.16));border:1px solid #3A455C;display:flex;align-items:center;justify-content:center">
+            <svg width="22" height="22" viewBox="0 0 24 24"><polygon points="8,5 20,12 8,19" fill="#FF6B98"></polygon></svg>
           </div>
           <div style="min-width:0;flex:1">
             <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:28px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase">Préparer la lecture</div>
-            <div style="margin-top:5px;font-size:15px;font-weight:600;color:#B8AFCB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ setupTitle }}</div>
+            <div style="margin-top:5px;font-size:15px;font-weight:600;color:#BAC2CF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ setupTitle }}</div>
           </div>
         </div>
 
         <sc-if value="{{ setupLoading }}" hint-placeholder-val="{{ false }}">
-          <div style="min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px;border-radius:12px;background:rgba(8,6,13,0.46);border:1px solid #282137">
-            <div style="width:38px;height:38px;border-radius:50%;border:3px solid #312942;border-top-color:#00F0FF;animation:spin 0.85s linear infinite"></div>
-            <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;letter-spacing:2px;color:#EDEAF4;text-transform:uppercase">Analyse des langues et sous-titres…</div>
-            <div style="font-size:13px;color:#7F7694;text-align:center;padding:0 20px">Les pistes sont détectées avant le démarrage du lecteur.</div>
+          <div style="min-height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px;border-radius:12px;background:rgba(8,6,13,0.46);border:1px solid #2A3344">
+            <div style="width:38px;height:38px;border-radius:50%;border:3px solid #354057;border-top-color:#7657FF;animation:spin 0.85s linear infinite"></div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:17px;letter-spacing:2px;color:#F5F5F7;text-transform:uppercase">Analyse des langues et sous-titres…</div>
+            <div style="font-size:13px;color:#848D9C;text-align:center;padding:0 20px">Les pistes sont détectées avant le démarrage du lecteur.</div>
           </div>
         </sc-if>
 
         <sc-if value="{{ setupHasError }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:15px;padding:18px;border-radius:10px;background:rgba(255,45,85,0.08);border:1px solid rgba(255,77,148,0.45)">
-            <div style="font-size:14px;line-height:1.55;color:#FF91B7">{{ setupError }}</div>
-            <button onClick="{{ retryPlayerSetup }}" style="align-self:flex-start;background:transparent;border:1px solid #FF4D94;border-radius:6px;padding:9px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:2px;color:#FF4D94;text-transform:uppercase;cursor:pointer">Réessayer</button>
+            <div style="font-size:14px;line-height:1.55;color:#FF9DBA">{{ setupError }}</div>
+            <button onClick="{{ retryPlayerSetup }}" style="align-self:flex-start;background:transparent;border:1px solid #FF6B98;border-radius:6px;padding:9px 16px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:2px;color:#FF6B98;text-transform:uppercase;cursor:pointer">Réessayer</button>
           </div>
         </sc-if>
 
         <sc-if value="{{ setupReady }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex;flex-direction:column;gap:18px">
             <div style="display:flex;flex-direction:column;gap:8px">
-              <label style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#00F0FF;text-transform:uppercase">Langue audio</label>
-              <select value="{{ setupAudioTrack }}" onChange="{{ onSetupAudioTrack }}" style="width:100%;background:#0D0B14;border:1px solid #3A304E;border-radius:8px;padding:13px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:1px;color:#FFFFFF;cursor:pointer;outline:none">
+              <label style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#7657FF;text-transform:uppercase">Langue audio</label>
+              <select value="{{ setupAudioTrack }}" onChange="{{ onSetupAudioTrack }}" style="width:100%;background:#07090E;border:1px solid #3A455C;border-radius:8px;padding:13px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:1px;color:#FFFFFF;cursor:pointer;outline:none">
                 <sc-for list="{{ setupAudioOptions }}" as="opt" hint-placeholder-count="0">
                   <option value="{{ opt.value }}">{{ opt.label }}</option>
                 </sc-for>
               </select>
-              <div style="font-size:12px;line-height:1.45;color:#766D8B">La piste choisie sera intégrée au flux vidéo dès son lancement.</div>
+              <div style="font-size:12px;line-height:1.45;color:#7F8998">La piste choisie sera intégrée au flux vidéo dès son lancement.</div>
             </div>
 
             <div style="display:flex;flex-direction:column;gap:8px">
-              <label style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#FF4D94;text-transform:uppercase">Sous-titres</label>
-              <select value="{{ setupSubtitleTrack }}" onChange="{{ onSetupSubtitleTrack }}" style="width:100%;background:#0D0B14;border:1px solid #3A304E;border-radius:8px;padding:13px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:1px;color:#FFFFFF;cursor:pointer;outline:none">
+              <label style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#FF6B98;text-transform:uppercase">Sous-titres</label>
+              <select value="{{ setupSubtitleTrack }}" onChange="{{ onSetupSubtitleTrack }}" style="width:100%;background:#07090E;border:1px solid #3A455C;border-radius:8px;padding:13px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:1px;color:#FFFFFF;cursor:pointer;outline:none">
                 <sc-for list="{{ setupSubtitleOptions }}" as="opt" hint-placeholder-count="0">
                   <option value="{{ opt.value }}">{{ opt.label }}</option>
                 </sc-for>
               </select>
               <sc-if value="{{ setupSubtitleLoading }}" hint-placeholder-val="{{ false }}">
-                <div style="display:flex;align-items:center;gap:9px;font-size:12px;color:#00F0FF"><div style="width:12px;height:12px;border-radius:50%;border:2px solid #2A2438;border-top-color:#00F0FF;animation:spin 0.8s linear infinite"></div>Préparation des sous-titres…</div>
+                <div style="display:flex;align-items:center;gap:9px;font-size:12px;color:#7657FF"><div style="width:12px;height:12px;border-radius:50%;border:2px solid #273042;border-top-color:#7657FF;animation:spin 0.8s linear infinite"></div>Préparation des sous-titres…</div>
               </sc-if>
               <sc-if value="{{ setupSubtitleReady }}" hint-placeholder-val="{{ false }}">
-                <div style="font-size:12px;color:#68F5C0">✓ Sous-titres prêts avant la lecture.</div>
+                <div style="font-size:12px;color:#65D6A4">✓ Sous-titres prêts avant la lecture.</div>
               </sc-if>
               <sc-if value="{{ setupSubtitleHasError }}" hint-placeholder-val="{{ false }}">
-                <div style="font-size:12px;line-height:1.45;color:#FF769F">{{ setupSubtitleError }}</div>
+                <div style="font-size:12px;line-height:1.45;color:#FF7FA8">{{ setupSubtitleError }}</div>
               </sc-if>
             </div>
           </div>
         </sc-if>
 
         <div style="display:flex;gap:12px;justify-content:flex-end;padding-top:2px">
-          <button onClick="{{ cancelPlayerSetup }}" style="background:transparent;border:1px solid #3A304E;border-radius:7px;padding:11px 19px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#A79DBB;text-transform:uppercase;cursor:pointer">Annuler</button>
+          <button onClick="{{ cancelPlayerSetup }}" style="background:transparent;border:1px solid #3A455C;border-radius:7px;padding:11px 19px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#A8B0BE;text-transform:uppercase;cursor:pointer">Annuler</button>
           <sc-if value="{{ setupCanStart }}" hint-placeholder-val="{{ false }}">
-            <button onClick="{{ startPreparedPlayback }}" style="background:linear-gradient(95deg,#FF006E,#D40045);border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 22px rgba(255,0,110,0.34)">Lancer la lecture</button>
+            <button onClick="{{ startPreparedPlayback }}" style="background:linear-gradient(95deg,#E82967,#C51F59);border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 22px rgba(232,41,103,0.34)">Lancer la lecture</button>
           </sc-if>
           <sc-if value="{{ setupCannotStart }}" hint-placeholder-val="{{ false }}">
-            <button disabled="true" style="background:#2B2536;border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#6F667F;text-transform:uppercase;cursor:not-allowed">Lancer la lecture</button>
+            <button disabled="true" style="background:#2B2536;border:none;border-radius:7px;padding:11px 21px;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:2px;color:#667085;text-transform:uppercase;cursor:not-allowed">Lancer la lecture</button>
           </sc-if>
         </div>
       </div>
@@ -615,36 +658,36 @@ input { outline: none; }
       </sc-if>
 
       <sc-if value="{{ audioSwitching }}" hint-placeholder-val="{{ false }}">
-        <div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#00F0FF;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;padding:8px 18px;border-radius:6px;border:1px solid #00F0FF;z-index:20;display:flex;align-items:center;gap:10px"><div style="width:14px;height:14px;border-radius:50%;border:2px solid #2A2438;border-top-color:#00F0FF;animation:spin 0.8s linear infinite"></div>Chargement de l'audio…</div>
+        <div style="position:absolute;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:#7657FF;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:2px;padding:8px 18px;border-radius:6px;border:1px solid #7657FF;z-index:20;display:flex;align-items:center;gap:10px"><div style="width:14px;height:14px;border-radius:50%;border:2px solid #273042;border-top-color:#7657FF;animation:spin 0.8s linear infinite"></div>Chargement de l'audio…</div>
       </sc-if>
 
       <sc-if value="{{ videoLoading }}" hint-placeholder-val="{{ false }}">
-        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:#0D0B14">
-          <div style="width:48px;height:48px;border-radius:50%;border:3px solid #2A2438;border-top-color:#FF006E;animation:spin 0.9s linear infinite"></div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:3px;color:#EDEAF4;text-transform:uppercase;max-width:70vw;text-align:center">{{ playingTitle }}</div>
-          <div style="font-size:13px;font-weight:600;letter-spacing:2px;color:#7A7290">Chargement du flux…</div>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:#07090E">
+          <div style="width:48px;height:48px;border-radius:50%;border:3px solid #273042;border-top-color:#E82967;animation:spin 0.9s linear infinite"></div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:24px;letter-spacing:3px;color:#F5F5F7;text-transform:uppercase;max-width:70vw;text-align:center">{{ playingTitle }}</div>
+          <div style="font-size:13px;font-weight:600;letter-spacing:2px;color:#848D9C">Chargement du flux…</div>
         </div>
       </sc-if>
 
       <sc-if value="{{ videoError }}" hint-placeholder-val="{{ false }}">
-        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#0D0B14">
-          <div style="color:#FF4D94;font-size:16px;font-weight:500;max-width:70vw;text-align:center">{{ videoError }}</div>
-          <button onClick="{{ exitPlayer }}" style="background:transparent;border:1px solid #FF006E;border-radius:6px;padding:10px 22px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:2px;color:#FF006E;text-transform:uppercase;cursor:pointer">Retour</button>
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#07090E">
+          <div style="color:#FF6B98;font-size:16px;font-weight:500;max-width:70vw;text-align:center">{{ videoError }}</div>
+          <button onClick="{{ exitPlayer }}" style="background:transparent;border:1px solid #E82967;border-radius:6px;padding:10px 22px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:2px;color:#E82967;text-transform:uppercase;cursor:pointer">Retour</button>
         </div>
       </sc-if>
 
       <!-- top bar -->
       <div style="position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:18px;padding:20px 28px 40px;background:linear-gradient(180deg, rgba(0,0,0,0.75), transparent);opacity:{{ controlsOpacity }};pointer-events:{{ controlsPE }};transition:opacity 0.25s">
-        <button onClick="{{ exitPlayer }}" style="background:rgba(20,17,30,0.7);border:1px solid #2A2438;border-radius:6px;padding:8px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#EDEAF4;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s" style-hover="border-color:#00F0FF">← Retour</button>
-        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;letter-spacing:2px;color:#EDEAF4;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ playingTitle }}</div>
+        <button onClick="{{ exitPlayer }}" style="background:rgba(20,17,30,0.7);border:1px solid #273042;border-radius:6px;padding:8px 14px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#F5F5F7;text-transform:uppercase;cursor:pointer;white-space:nowrap;transition:border-color 0.15s" style-hover="border-color:#7657FF">← Retour</button>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:22px;letter-spacing:2px;color:#F5F5F7;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ playingTitle }}</div>
       </div>
 
       <!-- bottom controls -->
       <div style="position:absolute;bottom:0;left:0;right:0;display:flex;flex-direction:column;gap:10px;padding:40px 28px 20px;background:linear-gradient(0deg, rgba(0,0,0,0.8), transparent);opacity:{{ controlsOpacity }};pointer-events:{{ controlsPE }};transition:opacity 0.25s">
         <div onPointerDown="{{ seekDown }}" style="position:relative;height:16px;display:flex;align-items:center;cursor:pointer">
           <div style="position:relative;width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,0.18)">
-            <div style="position:absolute;left:0;top:0;bottom:0;width:{{ progressPct }};border-radius:2px;background:linear-gradient(90deg, #FF006E, #FF4D94);box-shadow:0 0 10px rgba(255,0,110,0.6)"></div>
-            <div style="position:absolute;top:50%;left:{{ progressPct }};transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:#FF006E;box-shadow:0 0 12px rgba(255,0,110,0.9)"></div>
+            <div style="position:absolute;left:0;top:0;bottom:0;width:{{ progressPct }};border-radius:2px;background:linear-gradient(90deg, #E82967, #FF6B98);box-shadow:0 0 10px rgba(232,41,103,0.6)"></div>
+            <div style="position:absolute;top:50%;left:{{ progressPct }};transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:#E82967;box-shadow:0 0 12px rgba(232,41,103,0.9)"></div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:18px">
@@ -678,20 +721,20 @@ input { outline: none; }
             </button>
             <div onPointerDown="{{ volumeDown }}" style="position:relative;width:90px;height:16px;display:flex;align-items:center;cursor:pointer">
               <div style="position:relative;width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,0.18)">
-                <div style="position:absolute;left:0;top:0;bottom:0;width:{{ volumePct }};border-radius:2px;background:#00F0FF;box-shadow:0 0 8px rgba(0,240,255,0.6)"></div>
+                <div style="position:absolute;left:0;top:0;bottom:0;width:{{ volumePct }};border-radius:2px;background:#7657FF;box-shadow:0 0 8px rgba(118,87,255,0.6)"></div>
               </div>
             </div>
           </div>
-          <div style="font-size:13px;font-weight:600;letter-spacing:1px;color:#C8C0DC;font-variant-numeric:tabular-nums">{{ timeLabel }}</div>
+          <div style="font-size:13px;font-weight:600;letter-spacing:1px;color:#D0D5DD;font-variant-numeric:tabular-nums">{{ timeLabel }}</div>
           <sc-if value="{{ hasAudioTracks }}" hint-placeholder-val="{{ false }}">
-            <select value="{{ currentAudioTrack }}" onChange="{{ setAudioTrack }}" style="background:rgba(20,17,30,0.8);border:1px solid #2A2438;border-radius:6px;padding:6px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:1px;color:#EDEAF4;cursor:pointer;outline:none;max-width:140px">
+            <select value="{{ currentAudioTrack }}" onChange="{{ setAudioTrack }}" style="background:rgba(20,17,30,0.8);border:1px solid #273042;border-radius:6px;padding:6px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:1px;color:#F5F5F7;cursor:pointer;outline:none;max-width:140px">
               <sc-for list="{{ audioOptions }}" as="opt" hint-placeholder-count="0">
                 <option value="{{ opt.value }}">{{ opt.label }}</option>
               </sc-for>
             </select>
           </sc-if>
           <sc-if value="{{ hasSubtitleTracks }}" hint-placeholder-val="{{ false }}">
-            <select value="{{ currentSubtitleTrack }}" onChange="{{ setSubtitleTrack }}" style="background:rgba(20,17,30,0.8);border:1px solid #2A2438;border-radius:6px;padding:6px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:1px;color:#EDEAF4;cursor:pointer;outline:none;max-width:160px">
+            <select value="{{ currentSubtitleTrack }}" onChange="{{ setSubtitleTrack }}" style="background:rgba(20,17,30,0.8);border:1px solid #273042;border-radius:6px;padding:6px 10px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:13px;letter-spacing:1px;color:#F5F5F7;cursor:pointer;outline:none;max-width:160px">
               <sc-for list="{{ subtitleOptions }}" as="opt" hint-placeholder-count="0">
                 <option value="{{ opt.value }}">{{ opt.label }}</option>
               </sc-for>
@@ -732,8 +775,8 @@ class Component extends DCLogic {
   _toastId = 0;
   toast(msg, ok) {
     const id = ++this._toastId;
-    const accent = ok ? '#00F0FF' : '#FF2D55';
-    const glow = ok ? 'rgba(0,240,255,0.25)' : 'rgba(255,45,85,0.3)';
+    const accent = ok ? '#7657FF' : '#FF2D55';
+    const glow = ok ? 'rgba(118,87,255,0.25)' : 'rgba(255,45,85,0.3)';
     this.setState(s => ({ toasts: s.toasts.concat([{ id, msg, accent, glow }]) }));
     setTimeout(() => this.setState(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), 3500);
   }
@@ -969,9 +1012,9 @@ class Component extends DCLogic {
       inMyList: inList,
       addLabel: inList ? '✓' : '+',
       addTitle: inList ? 'Retirer de ma liste' : 'Ajouter à ma liste',
-      addBg: inList ? '#FF006E' : 'rgba(255,0,110,0.12)',
-      addColor: inList ? '#FFFFFF' : '#FF006E',
-      addGlow: inList ? '0 0 12px rgba(255,0,110,0.6)' : 'none',
+      addBg: inList ? '#E82967' : 'rgba(232,41,103,0.12)',
+      addColor: inList ? '#FFFFFF' : '#E82967',
+      addGlow: inList ? '0 0 12px rgba(232,41,103,0.6)' : 'none',
       addToList: (e) => { e.stopPropagation(); onToggle(); },
     };
   }
@@ -1116,7 +1159,7 @@ class Component extends DCLogic {
         setupDuration: Number(data.duration) || 0,
       });
     } catch (e) {
-      console.error('[DanaTrap] préparation du lecteur impossible:', e);
+      console.error('[DTS] préparation du lecteur impossible:', e);
       if (this.state.playerSetupOpen && this.state.setupVideoId === videoId) {
         this.setState({ setupLoading: false, setupError: 'Impossible d’analyser les pistes : ' + e.message });
       }
@@ -1182,7 +1225,7 @@ class Component extends DCLogic {
       this._preparedSubtitleIndex = index;
       this.setState({ setupSubtitleLoading: false, setupSubtitleError: '' });
     } catch (err) {
-      console.error('[DanaTrap] préchargement des sous-titres impossible:', err);
+      console.error('[DTS] préchargement des sous-titres impossible:', err);
       if (this.state.playerSetupOpen && this.state.setupVideoId === videoId && this.state.setupSubtitleTrack === index) {
         this.setState({ setupSubtitleLoading: false, setupSubtitleError: 'Sous-titres indisponibles : ' + err.message });
       }
@@ -1350,7 +1393,7 @@ class Component extends DCLogic {
       if (probedDuration > 0) update.duration = probedDuration;
       this.setState(update);
     } catch (e) {
-      console.error('[DanaTrap] chargement des pistes impossible:', e);
+      console.error('[DTS] chargement des pistes impossible:', e);
       if (this.state.currentVideoId === videoId) {
         this.toast('Impossible d’analyser les pistes audio et les sous-titres : ' + e.message, false);
       }
@@ -1405,7 +1448,7 @@ class Component extends DCLogic {
       if (!this._subtitleCues.length) throw new Error('La piste ne contient aucun sous-titre lisible');
       this._updateSubtitle();
     } catch (e) {
-      console.error('[DanaTrap] chargement des sous-titres impossible:', e);
+      console.error('[DTS] chargement des sous-titres impossible:', e);
       if (this.state.currentVideoId === selectedVideoId && this.state.currentSubtitleTrack === index) {
         this.setState({ currentSubtitleTrack: -1, subtitleText: '' });
         this.toast('Sous-titres indisponibles : ' + e.message, false);
@@ -1642,8 +1685,11 @@ class Component extends DCLogic {
   componentWillUnmount() { this._abortVideo(); this._stopHeroTimer(); }
 
   // ---- inputs ----
-  goAccueil = () => this.setState({ libTab: 'accueil' });
-  goCatalogue = () => this.setState({ libTab: 'catalogue' });
+  goAccueil = () => this.setState({ libTab: 'accueil', searchQuery: '' });
+  goCatalogue = () => this.setState({ libTab: 'catalogue', catType: 'tous', searchQuery: '' });
+  goFilms = () => this.setState({ libTab: 'catalogue', catType: 'film', catGenre: 'Tous les genres', searchQuery: '' });
+  goSeries = () => this.setState({ libTab: 'catalogue', catType: 'series', catGenre: 'Tous les genres', searchQuery: '' });
+  goAnime = () => this.setState({ libTab: 'catalogue', catType: 'anime', catGenre: 'Tous les genres', searchQuery: '' });
   setCatType = (t) => this.setState({ catType: t });
   onCatGenre = (e) => this.setState({ catGenre: e.target.value });
 
@@ -1771,12 +1817,12 @@ class Component extends DCLogic {
     const nouveautes = pool.slice().reverse().slice(0, 15).map(p => this._mapItem(p.it, p.kind));
     const tendances = pool.slice().sort((a, b) => hashOf(a.it.titre || '') - hashOf(b.it.titre || '')).slice(0, 15).map(p => this._mapItem(p.it, p.kind));
     const sections = s.library ? [
-      { label: 'Films', accent: '#FF006E', glow: 'rgba(255,0,110,0.35)', items: this._mapItems(lib.films, 'film'), count: String((lib.films || []).length) },
-      { label: 'Séries', accent: '#00F0FF', glow: 'rgba(0,240,255,0.3)', items: this._mapItems(lib.series, 'series'), count: String((lib.series || []).length) },
-      { label: 'Anime', accent: '#FF006E', glow: 'rgba(255,0,110,0.35)', items: this._mapItems(lib.anime, 'anime'), count: String((lib.anime || []).length) },
-      { label: 'Nouveautés', accent: '#00F0FF', glow: 'rgba(0,240,255,0.3)', items: nouveautes, count: String(nouveautes.length) },
-      { label: 'Tendances', accent: '#FF006E', glow: 'rgba(255,0,110,0.35)', items: tendances, count: String(tendances.length) },
-      { label: 'Votre historique', accent: '#00F0FF', glow: 'rgba(0,240,255,0.3)', isHistory: true, count: String(s.history.length), items: s.history.map(h => {
+      { label: 'Films', accent: '#E82967', glow: 'rgba(232,41,103,0.28)', items: this._mapItems(lib.films, 'film'), count: String((lib.films || []).length) },
+      { label: 'Séries', accent: '#7657FF', glow: 'rgba(118,87,255,0.27)', items: this._mapItems(lib.series, 'series'), count: String((lib.series || []).length) },
+      { label: 'Anime', accent: '#E82967', glow: 'rgba(232,41,103,0.35)', items: this._mapItems(lib.anime, 'anime'), count: String((lib.anime || []).length) },
+      { label: 'Nouveautés', accent: '#7657FF', glow: 'rgba(118,87,255,0.3)', items: nouveautes, count: String(nouveautes.length) },
+      { label: 'Tendances', accent: '#E82967', glow: 'rgba(232,41,103,0.35)', items: tendances, count: String(tendances.length) },
+      { label: 'Votre historique', accent: '#7657FF', glow: 'rgba(118,87,255,0.3)', isHistory: true, count: String(s.history.length), items: s.history.map(h => {
         const url = s.posters[h.poster_id] || null;
         const noop = (e) => { e.stopPropagation(); };
         return Object.assign({
@@ -1795,7 +1841,7 @@ class Component extends DCLogic {
           type: h.type, kind: null, raw: null,
         })));
       }) },
-      { label: 'Ma Liste', accent: '#FF006E', glow: 'rgba(255,0,110,0.35)', count: String(s.myList.length), items: s.myList.map(m => {
+      { label: 'Ma Liste', accent: '#E82967', glow: 'rgba(232,41,103,0.35)', count: String(s.myList.length), items: s.myList.map(m => {
         const url = s.posters[m.poster_id] || null;
         const noop = (e) => { e.stopPropagation(); };
         return Object.assign({
@@ -1872,13 +1918,13 @@ class Component extends DCLogic {
       loginLabel: s.loggingIn ? 'Connexion…' : 'Connexion',
       rememberMe: s.rememberMe,
       toggleRemember: this.toggleRemember,
-      rememberBorder: s.rememberMe ? '#00F0FF' : '#2A2438',
-      rememberBg: s.rememberMe ? '#00F0FF' : '#14111E',
-      rememberGlow: s.rememberMe ? '0 0 12px rgba(0,240,255,0.45)' : 'none',
-      rememberLabelColor: s.rememberMe ? '#C8C0DC' : '#7A7290',
+      rememberBorder: s.rememberMe ? '#7657FF' : '#273042',
+      rememberBg: s.rememberMe ? '#7657FF' : '#10141D',
+      rememberGlow: s.rememberMe ? '0 0 12px rgba(118,87,255,0.45)' : 'none',
+      rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v3.4-preselection',
+      appVersion: 'v4.0-dts-universe',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError,
@@ -1894,10 +1940,24 @@ class Component extends DCLogic {
       showCatalogue: query.length === 0 && s.libTab === 'catalogue',
       goAccueil: this.goAccueil,
       goCatalogue: this.goCatalogue,
-      tabAccueilColor: s.libTab === 'accueil' ? '#FF006E' : '#9A92B0',
-      tabAccueilBorder: s.libTab === 'accueil' ? '#FF006E' : 'transparent',
-      tabCatalogueColor: s.libTab === 'catalogue' ? '#FF006E' : '#9A92B0',
-      tabCatalogueBorder: s.libTab === 'catalogue' ? '#FF006E' : 'transparent',
+      goFilms: this.goFilms,
+      goSeries: this.goSeries,
+      goAnime: this.goAnime,
+      tabAccueilColor: s.libTab === 'accueil' ? '#F5F5F7' : '#9DA4B3',
+      tabAccueilBorder: s.libTab === 'accueil' ? '#E82967' : 'transparent',
+      tabFilmsColor: s.libTab === 'catalogue' && s.catType === 'film' ? '#F5F5F7' : '#9DA4B3',
+      tabFilmsBorder: s.libTab === 'catalogue' && s.catType === 'film' ? '#E82967' : 'transparent',
+      tabSeriesColor: s.libTab === 'catalogue' && s.catType === 'series' ? '#F5F5F7' : '#9DA4B3',
+      tabSeriesBorder: s.libTab === 'catalogue' && s.catType === 'series' ? '#7657FF' : 'transparent',
+      tabAnimeColor: s.libTab === 'catalogue' && s.catType === 'anime' ? '#F5F5F7' : '#9DA4B3',
+      tabAnimeBorder: s.libTab === 'catalogue' && s.catType === 'anime' ? '#E82967' : 'transparent',
+      tabCatalogueColor: s.libTab === 'catalogue' && s.catType === 'tous' ? '#F5F5F7' : '#9DA4B3',
+      tabCatalogueBorder: s.libTab === 'catalogue' && s.catType === 'tous' ? '#7657FF' : 'transparent',
+      mobileAccueilColor: s.libTab === 'accueil' ? '#E82967' : '#8C95A3',
+      mobileFilmsColor: s.libTab === 'catalogue' && s.catType === 'film' ? '#E82967' : '#8C95A3',
+      mobileSeriesColor: s.libTab === 'catalogue' && s.catType === 'series' ? '#7657FF' : '#8C95A3',
+      mobileAnimeColor: s.libTab === 'catalogue' && s.catType === 'anime' ? '#E82967' : '#8C95A3',
+      mobileCatalogueColor: s.libTab === 'catalogue' && s.catType === 'tous' ? '#7657FF' : '#8C95A3',
       catalogueItems: catalogueItems,
       catalogueCount: String(catalogueItems.length),
       hasCatalogueItems: catalogueItems.length > 0,
@@ -1905,10 +1965,10 @@ class Component extends DCLogic {
       catTypeFilters: catTypes.map(t => ({
         label: t.label,
         go: () => this.setCatType(t.id),
-        bg: s.catType === t.id ? 'rgba(255,0,110,0.15)' : 'transparent',
-        border: s.catType === t.id ? '#FF006E' : '#2A2438',
-        color: s.catType === t.id ? '#FF006E' : '#9A92B0',
-        glow: s.catType === t.id ? '0 0 12px rgba(255,0,110,0.3)' : 'none',
+        bg: s.catType === t.id ? 'rgba(232,41,103,0.15)' : 'transparent',
+        border: s.catType === t.id ? '#E82967' : '#273042',
+        color: s.catType === t.id ? '#E82967' : '#9DA4B3',
+        glow: s.catType === t.id ? '0 0 12px rgba(232,41,103,0.3)' : 'none',
       })),
       hasGenreFilter: allGenres.length > 0,
       genreOptions: ['Tous les genres'].concat(allGenres),
@@ -1923,7 +1983,7 @@ class Component extends DCLogic {
         const base = this._mapItem(p.it, p.kind);
         const active = i === s.heroIdx;
         return Object.assign(base, {
-          accent: p.kind === 'series' ? '#00F0FF' : '#FF006E',
+          accent: p.kind === 'series' ? '#7657FF' : '#E82967',
           opacity: active ? 1 : 0,
           pe: active ? 'auto' : 'none',
           bgEl: base.posterUrl ? React.createElement('img', { src: base.posterUrl, alt: base.titre, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%' } }) : null,
@@ -1936,8 +1996,8 @@ class Component extends DCLogic {
       heroDots: heroPool.map((p, i) => ({
         go: () => this.goHero(i),
         w: i === s.heroIdx ? '26px' : '8px',
-        bg: i === s.heroIdx ? '#FF006E' : 'rgba(255,255,255,0.25)',
-        glow: i === s.heroIdx ? '0 0 10px rgba(255,0,110,0.7)' : 'none',
+        bg: i === s.heroIdx ? '#E82967' : 'rgba(255,255,255,0.25)',
+        glow: i === s.heroIdx ? '0 0 10px rgba(232,41,103,0.7)' : 'none',
       })),
       confirmingClear: s.confirmClear,
       notConfirmingClear: !s.confirmClear,
@@ -1950,7 +2010,7 @@ class Component extends DCLogic {
       backToLibrary: this.backToLibrary,
       detailTitle: show ? show.titre : '',
       detailKind: s.showKind === 'anime' ? 'Anime' : 'Série',
-      detailAccent: s.showKind === 'anime' ? '#FF006E' : '#00F0FF',
+      detailAccent: s.showKind === 'anime' ? '#E82967' : '#7657FF',
       detailPosterUrl: show ? (s.posters[show.poster_id] || null) : null,
       detailPosterEl: show ? this._posterEl(s.posters[show.poster_id] || null, show.titre) : null,
       videoEl: s.videoUrl ? React.createElement('video', {
@@ -1988,7 +2048,7 @@ class Component extends DCLogic {
       progressPct: pct.toFixed(2) + '%',
       volumePct: (s.muted ? 0 : s.volume * 100).toFixed(0) + '%',
       volIconColor: '#FFFFFF',
-      volWaveColor: s.muted ? '#544C68' : '#00F0FF',
+      volWaveColor: s.muted ? '#667085' : '#7657FF',
       timeLabel: this._fmt(s.currentTime) + ' / ' + this._fmt(dur),
       controlsOpacity: controlsOn ? 1 : 0,
       controlsPE: controlsOn ? 'auto' : 'none',
