@@ -432,3 +432,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 
 @media (max-width:1050px){.dts-admin-grid{grid-template-columns:repeat(3,1fr)}.dts-admin-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dts-admin-form-grid .dts-primary-btn{grid-column:span 2}.dts-user-edit{grid-template-columns:1fr 1fr}.dts-user-edit>strong{grid-column:1/-1}.dts-detail-hero{align-items:flex-start}}
 @media (max-width:700px){.dts-filter-select{max-width:100%;font-size:12px;padding:7px 10px}.dts-detail-page{padding:20px 16px 92px}.dts-detail-hero{display:block}.dts-detail-poster{width:150px;height:225px;margin-bottom:20px}.dts-detail-copy h1{font-size:43px}.dts-episodes-grid{grid-template-columns:1fr}.dts-admin-page{padding:18px 14px 90px}.dts-admin-grid{grid-template-columns:repeat(2,1fr)}.dts-admin-form-grid{grid-template-columns:1fr}.dts-admin-form-grid .dts-primary-btn{grid-column:auto}.dts-user-row{align-items:flex-start;flex-wrap:wrap}.dts-user-main{min-width:150px}.dts-user-actions{width:100%;padding-left:51px}.dts-user-edit{grid-template-columns:1fr}.dts-controls-row{gap:5px}.dts-controls-row select,.dts-volume,.dts-time{display:none}.dts-player-top{padding:13px 12px 38px}.dts-player-top>strong{font-size:16px}.dts-player-icon-text{padding:7px 9px;font-size:11px}.dts-player-bottom{padding:36px 12px 12px}.dts-player-drawer,.dts-subtitle-panel{width:100%}.dts-next-episode{right:12px;bottom:78px}.dts-subtitle{max-width:94%;}.dts-trailer-round{width:42px;height:42px}}
+
+/* DTS v5.2 — édition manuelle du catalogue */
+@media (max-width: 720px) {
+  .dts-admin-catalog-toolbar { grid-template-columns: 1fr !important; }
+  .dts-metadata-grid { grid-template-columns: 1fr !important; }
+  .dts-metadata-grid > label { grid-column: 1 !important; }
+  .dts-admin-content-row { grid-template-columns: 48px minmax(0,1fr) !important; }
+  .dts-admin-content-row > button { grid-column: 1 / -1; width: 100%; }
+  .dts-admin-content-row > div:first-child { width: 48px !important; height: 68px !important; }
+}

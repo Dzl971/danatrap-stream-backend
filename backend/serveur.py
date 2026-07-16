@@ -224,6 +224,148 @@ def sauvegarder_utilisateurs(utilisateurs):
         _USERS_CACHE["data"] = normalise
 
 
+CATALOGUE_METADATA_FILENAME = "catalogue_metadata.json"
+_METADATA_CACHE: dict[str, Any] = {"cached_at": 0.0, "data": None}
+_METADATA_CACHE_LOCK = threading.Lock()
+_METADATA_CACHE_TTL = int(os.environ.get("METADATA_CACHE_TTL", "30"))
+
+# Champs administrables. Les valeurs présentes dans catalogue_metadata.json
+# ont toujours priorité sur les informations automatiques de TMDB.
+_METADATA_FIELDS = {
+    "titre", "synopsis", "annee", "duree", "genres", "certification",
+    "note", "langue_originale", "acteurs", "realisateurs", "poster_url",
+    "backdrop_url", "bande_annonce_url",
+}
+
+
+def trouver_fichier_metadata_catalogue(service, racine_id):
+    resultats = service.files().list(
+        q=f"name = '{CATALOGUE_METADATA_FILENAME}' and '{racine_id}' in parents and trashed = false",
+        fields="files(id, name)",
+    ).execute()
+    fichiers = resultats.get('files', [])
+    return fichiers[0]['id'] if fichiers else None
+
+
+def _normaliser_liste_metadata(valeur: Any) -> list[str]:
+    if valeur is None:
+        return []
+    if isinstance(valeur, str):
+        items = re.split(r"[,;\n]", valeur)
+    elif isinstance(valeur, list):
+        items = valeur
+    else:
+        return []
+    resultat = []
+    for item in items:
+        texte = str(item or "").strip()
+        if texte and texte not in resultat:
+            resultat.append(texte[:160])
+    return resultat[:30]
+
+
+def _normaliser_override_metadata(valeur: Any) -> dict:
+    if not isinstance(valeur, dict):
+        return {}
+    resultat: dict[str, Any] = {}
+    for champ in _METADATA_FIELDS:
+        if champ not in valeur:
+            continue
+        brut = valeur.get(champ)
+        if champ in {"genres", "acteurs", "realisateurs"}:
+            resultat[champ] = _normaliser_liste_metadata(brut)
+        elif champ == "note":
+            if brut in (None, ""):
+                resultat[champ] = None
+            else:
+                try:
+                    resultat[champ] = max(0.0, min(10.0, round(float(brut), 1)))
+                except (TypeError, ValueError):
+                    resultat[champ] = None
+        else:
+            texte = "" if brut is None else str(brut).strip()
+            limites = {
+                "titre": 240, "synopsis": 5000, "annee": 20, "duree": 80,
+                "certification": 40, "langue_originale": 30,
+                "poster_url": 2000, "backdrop_url": 2000,
+                "bande_annonce_url": 2000,
+            }
+            resultat[champ] = texte[:limites.get(champ, 1000)]
+    resultat["updated_at"] = str(valeur.get("updated_at") or datetime.utcnow().isoformat(timespec="seconds") + "Z")
+    return resultat
+
+
+def charger_metadata_catalogue(force: bool = False) -> dict:
+    now = time.time()
+    with _METADATA_CACHE_LOCK:
+        cached = _METADATA_CACHE.get("data")
+        if not force and isinstance(cached, dict) and now - float(_METADATA_CACHE.get("cached_at") or 0) < _METADATA_CACHE_TTL:
+            return json.loads(json.dumps(cached, ensure_ascii=False))
+
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        return {}
+    fichier_id = trouver_fichier_metadata_catalogue(service, racine_id)
+    if not fichier_id:
+        data = {}
+    else:
+        access_token = get_access_token()
+        url = f"https://www.googleapis.com/drive/v3/files/{fichier_id}?alt=media"
+        reponse = requests.get(url, headers={'Authorization': f'Bearer {access_token}'}, timeout=20)
+        reponse.raise_for_status()
+        brut = reponse.json()
+        data = brut if isinstance(brut, dict) else {}
+    normalise = {str(cle): _normaliser_override_metadata(valeur) for cle, valeur in data.items() if isinstance(valeur, dict)}
+    with _METADATA_CACHE_LOCK:
+        _METADATA_CACHE["cached_at"] = now
+        _METADATA_CACHE["data"] = normalise
+    return json.loads(json.dumps(normalise, ensure_ascii=False))
+
+
+def sauvegarder_metadata_catalogue(metadata: dict):
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        raise RuntimeError("Dossier racine 'Danatrap Stream' introuvable sur Google Drive")
+    fichier_id = trouver_fichier_metadata_catalogue(service, racine_id)
+    normalise = {str(cle): _normaliser_override_metadata(valeur) for cle, valeur in metadata.items() if isinstance(valeur, dict)}
+    contenu_json = json.dumps(normalise, indent=2, ensure_ascii=False)
+    media = MediaIoBaseUpload(io.BytesIO(contenu_json.encode('utf-8')), mimetype='application/json', resumable=False)
+    if fichier_id:
+        service.files().update(fileId=fichier_id, media_body=media).execute()
+    else:
+        meta_fichier = {'name': CATALOGUE_METADATA_FILENAME, 'parents': [racine_id]}
+        service.files().create(body=meta_fichier, media_body=media, fields='id').execute()
+    with _METADATA_CACHE_LOCK:
+        _METADATA_CACHE["cached_at"] = time.time()
+        _METADATA_CACHE["data"] = normalise
+
+
+def _cle_metadata(categorie: str, contenu_id: str) -> str:
+    return f"{categorie}:{contenu_id}"
+
+
+def _appliquer_metadata_manuelle(contenu: dict, categorie: str, contenu_id: str, overrides: dict) -> dict:
+    resultat = dict(contenu)
+    resultat["contenu_id"] = contenu_id
+    resultat["categorie"] = categorie
+    resultat.setdefault("titre_original", resultat.get("titre"))
+    manuel = overrides.get(_cle_metadata(categorie, contenu_id))
+    if isinstance(manuel, dict) and manuel:
+        for champ in _METADATA_FIELDS:
+            if champ in manuel:
+                resultat[champ] = manuel[champ]
+        resultat["metadata_manuel"] = True
+        resultat["metadata_updated_at"] = manuel.get("updated_at")
+    else:
+        resultat["metadata_manuel"] = False
+        resultat["metadata_updated_at"] = None
+    return resultat
+
+
 def verifier_mot_de_passe(mot_de_passe_clair, mot_de_passe_hash):
     try:
         return bcrypt.checkpw(mot_de_passe_clair.encode('utf-8'), str(mot_de_passe_hash).encode('utf-8'))
@@ -422,6 +564,22 @@ class NouvelUtilisateur(BaseModel):
 class MiseAJourUtilisateur(BaseModel):
     expires_at: Optional[str] = None
     max_devices: Optional[int] = None
+
+
+class MiseAJourMetadataContenu(BaseModel):
+    titre: Optional[str] = None
+    synopsis: Optional[str] = None
+    annee: Optional[str] = None
+    duree: Optional[str] = None
+    genres: Optional[list[str]] = None
+    certification: Optional[str] = None
+    note: Optional[float] = None
+    langue_originale: Optional[str] = None
+    acteurs: Optional[list[str]] = None
+    realisateurs: Optional[list[str]] = None
+    poster_url: Optional[str] = None
+    backdrop_url: Optional[str] = None
+    bande_annonce_url: Optional[str] = None
 
 
 @app.post("/admin/ajouter-utilisateur")
@@ -803,16 +961,18 @@ def rechercher_tmdb(titre, type_contenu="film"):
         return {}
 
 
-def scanner_films(service, films_id):
+def scanner_films(service, films_id, overrides: Optional[dict] = None):
     films = []
+    overrides = overrides or {}
     for dossier in lister_contenu(service, films_id):
         if dossier['mimeType'] == 'application/vnd.google-apps.folder':
             contenu = lister_contenu(service, dossier['id'])
             video = next((f for f in contenu if f['mimeType'].startswith('video/')), None)
             poster = next((f for f in contenu if f['name'].lower() in {'icon.jpg', 'icon.jpeg', 'icon.png', 'poster.jpg', 'poster.png'}), None)
             infos_tmdb = rechercher_tmdb(dossier['name'], "film")
-            films.append({
+            contenu = {
                 "titre": dossier['name'],
+                "titre_original": dossier['name'],
                 "video_id": video['id'] if video else None,
                 "video_nom": video.get('name') if video else None,
                 "poster_id": poster['id'] if poster else None,
@@ -820,13 +980,15 @@ def scanner_films(service, films_id):
                 "qualite": _qualite_video(video),
                 "duree_drive": _duree_drive(video),
                 **infos_tmdb
-            })
+            }
+            films.append(_appliquer_metadata_manuelle(contenu, "films", dossier['id'], overrides))
     films.sort(key=lambda f: f.get("date_ajout") or "", reverse=True)
     return films
 
 
-def scanner_series(service, series_id):
+def scanner_series(service, series_id, categorie: str = "series", overrides: Optional[dict] = None):
     series = []
+    overrides = overrides or {}
     for dossier_serie in lister_contenu(service, series_id):
         if dossier_serie['mimeType'] == 'application/vnd.google-apps.folder':
             contenu_serie = lister_contenu(service, dossier_serie['id'])
@@ -847,13 +1009,15 @@ def scanner_series(service, series_id):
                     ]
                     saisons.append({"nom_saison": dossier_saison['name'], "episodes": episodes, "date_ajout": dossier_saison.get("modifiedTime")})
             infos_tmdb = rechercher_tmdb(dossier_serie['name'], "tv")
-            series.append({
+            contenu = {
                 "titre": dossier_serie['name'],
+                "titre_original": dossier_serie['name'],
                 "poster_id": poster['id'] if poster else None,
                 "date_ajout": dossier_serie.get("modifiedTime"),
                 "saisons": saisons,
                 **infos_tmdb
-            })
+            }
+            series.append(_appliquer_metadata_manuelle(contenu, categorie, dossier_serie['id'], overrides))
     series.sort(key=lambda f: f.get("date_ajout") or "", reverse=True)
     return series
 
@@ -876,10 +1040,11 @@ def _scanner_bibliotheque(force: bool = False) -> dict:
     films_id = trouver_dossier_flexible(service, ["Films", "FILMS", "films"], racine_id)
     series_id = trouver_dossier_flexible(service, ["Séries", "Series", "SÉRIES", "SERIES", "séries", "series"], racine_id)
     anime_id = trouver_dossier_flexible(service, ["Animes", "Anime", "ANIMES", "ANIME", "animes", "anime"], racine_id)
+    overrides = charger_metadata_catalogue()
     data = {
-        "films": scanner_films(service, films_id) if films_id else [],
-        "series": scanner_series(service, series_id) if series_id else [],
-        "anime": scanner_series(service, anime_id) if anime_id else [],
+        "films": scanner_films(service, films_id, overrides) if films_id else [],
+        "series": scanner_series(service, series_id, "series", overrides) if series_id else [],
+        "anime": scanner_series(service, anime_id, "anime", overrides) if anime_id else [],
         "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
     with _LIBRARY_CACHE_LOCK:
@@ -894,14 +1059,94 @@ def get_bibliotheque(utilisateur: dict = Depends(verifier_token)):
     return _scanner_bibliotheque()
 
 
-@app.post("/admin/rafraichir-bibliotheque")
-def rafraichir_bibliotheque(admin: str = Depends(verifier_admin)):
+def _invalider_cache_bibliotheque():
     with _LIBRARY_CACHE_LOCK:
         _LIBRARY_CACHE["cached_at"] = 0.0
         _LIBRARY_CACHE["data"] = None
+
+
+@app.post("/admin/rafraichir-bibliotheque")
+def rafraichir_bibliotheque(admin: str = Depends(verifier_admin)):
+    _invalider_cache_bibliotheque()
     cache_tmdb.clear()
+    # Les modifications manuelles restent intactes et sont réappliquées après TMDB.
     data = _scanner_bibliotheque(force=True)
     return {"message": "Bibliothèque actualisée", "generated_at": data.get("generated_at")}
+
+
+def _categorie_catalogue_valide(categorie: str) -> str:
+    valeur = str(categorie or "").strip().lower()
+    aliases = {"film": "films", "films": "films", "serie": "series", "série": "series", "series": "series", "anime": "anime", "animes": "anime"}
+    normalisee = aliases.get(valeur)
+    if not normalisee:
+        raise HTTPException(status_code=400, detail="Catégorie invalide")
+    return normalisee
+
+
+def _trouver_contenu_catalogue(categorie: str, contenu_id: str) -> Optional[dict]:
+    bibliotheque = _scanner_bibliotheque()
+    return next((item for item in bibliotheque.get(categorie, []) if str(item.get("contenu_id")) == str(contenu_id)), None)
+
+
+def _valider_url_metadata(url: Any, champ: str) -> str:
+    texte = str(url or "").strip()
+    if texte and not re.match(r"^https?://", texte, flags=re.I):
+        raise HTTPException(status_code=400, detail=f"{champ} doit commencer par http:// ou https://")
+    return texte
+
+
+@app.patch("/admin/catalogue/{categorie}/{contenu_id}")
+def modifier_metadata_contenu(
+    categorie: str,
+    contenu_id: str,
+    data: MiseAJourMetadataContenu,
+    admin: str = Depends(verifier_admin),
+):
+    categorie = _categorie_catalogue_valide(categorie)
+    contenu = _trouver_contenu_catalogue(categorie, contenu_id)
+    if not contenu:
+        raise HTTPException(status_code=404, detail="Contenu introuvable dans le catalogue")
+
+    brut = data.model_dump(exclude_unset=True) if hasattr(data, "model_dump") else data.dict(exclude_unset=True)
+    if "titre" in brut and not str(brut.get("titre") or "").strip():
+        raise HTTPException(status_code=400, detail="Le titre affiché est obligatoire")
+    # Le formulaire envoie tous les champs : les valeurs vides sont donc des choix manuels valides.
+    for champ in ("poster_url", "backdrop_url", "bande_annonce_url"):
+        if champ in brut:
+            brut[champ] = _valider_url_metadata(brut.get(champ), champ)
+    brut["updated_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    override = _normaliser_override_metadata(brut)
+
+    metadata = charger_metadata_catalogue(force=True)
+    metadata[_cle_metadata(categorie, contenu_id)] = override
+    sauvegarder_metadata_catalogue(metadata)
+    _invalider_cache_bibliotheque()
+    return {
+        "message": "Informations du contenu enregistrées",
+        "categorie": categorie,
+        "contenu_id": contenu_id,
+        "metadata": override,
+    }
+
+
+@app.delete("/admin/catalogue/{categorie}/{contenu_id}")
+def reinitialiser_metadata_contenu(
+    categorie: str,
+    contenu_id: str,
+    admin: str = Depends(verifier_admin),
+):
+    categorie = _categorie_catalogue_valide(categorie)
+    metadata = charger_metadata_catalogue(force=True)
+    cle = _cle_metadata(categorie, contenu_id)
+    existait = cle in metadata
+    if existait:
+        del metadata[cle]
+        sauvegarder_metadata_catalogue(metadata)
+    _invalider_cache_bibliotheque()
+    return {
+        "message": "Informations automatiques restaurées" if existait else "Aucune modification manuelle à supprimer",
+        "removed": existait,
+    }
 
 
 @app.get("/admin/dashboard")

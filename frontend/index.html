@@ -524,6 +524,25 @@ input { outline: none; }
       <div class="dts-system-row"><sc-for list="{{ systemStatus }}" as="st" hint-placeholder-count="0"><div class="dts-system-pill"><i style="background:{{ st.color }}"></i>{{ st.label }} : {{ st.labelStatus }}</div></sc-for></div>
 
       <section class="dts-admin-panel">
+        <div class="dts-panel-title"><i></i><h2>Catalogue et informations</h2><span>{{ adminCatalogCount }}</span></div>
+        <div class="dts-admin-catalog-toolbar" style="display:grid;grid-template-columns:minmax(220px,1fr) 210px;gap:12px;margin-bottom:18px">
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8F98A8;font-weight:700">Rechercher un contenu</span><input type="search" value="{{ adminCatalogQuery }}" onChange="{{ onAdminCatalogQuery }}" placeholder="Titre, année, genre…" style="height:44px;border-radius:8px;border:1px solid #2C3547;background:#0D1119;color:#F5F5F7;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#8F98A8;font-weight:700">Catégorie</span><select value="{{ adminCatalogType }}" onChange="{{ onAdminCatalogType }}" style="height:44px;border-radius:8px;border:1px solid #2C3547;background:#0D1119;color:#F5F5F7;padding:0 13px;outline:none"><option value="tous">Tout le catalogue</option><option value="film">Films</option><option value="series">Séries</option><option value="anime">Anime</option></select></label>
+        </div>
+        <sc-if value="{{ adminCatalogLoading }}" hint-placeholder-val="{{ false }}"><div class="dts-user-list"><sc-for list="{{ skeletonRows }}" as="r" hint-placeholder-count="3"><div class="dts-user-row dts-skeleton"></div></sc-for></div></sc-if>
+        <sc-if value="{{ adminCatalogEmpty }}" hint-placeholder-val="{{ false }}"><div class="dts-error-row">Aucun contenu ne correspond à la recherche.</div></sc-if>
+        <div style="display:flex;flex-direction:column;gap:10px;max-height:620px;overflow:auto;padding-right:5px">
+          <sc-for list="{{ adminCatalogItems }}" as="c" hint-placeholder-count="0">
+            <div class="dts-admin-content-row" style="display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:14px;padding:11px;border-radius:11px;background:rgba(13,17,25,.82);border:1px solid #273042">
+              <div style="position:relative;width:58px;height:82px;border-radius:7px;overflow:hidden;background:#171C27">{{ c.posterEl }}</div>
+              <div style="min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><strong style="font-size:15px;color:#F5F5F7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">{{ c.title }}</strong><span style="padding:3px 7px;border-radius:999px;background:{{ c.kindBg }};color:{{ c.kindColor }};font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase">{{ c.kindLabel }}</span><sc-if value="{{ c.manual }}" hint-placeholder-val="{{ false }}"><span style="padding:3px 7px;border-radius:999px;background:rgba(99,230,190,.12);color:#63E6BE;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase">Manuel</span></sc-if></div><div style="margin-top:6px;color:#8F98A8;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.metaLine }}</div><div style="margin-top:4px;color:{{ c.descriptionColor }};font-size:12px">{{ c.descriptionLabel }}</div></div>
+              <button onClick="{{ c.edit }}" class="dts-outline-btn" style="white-space:nowrap">Modifier</button>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section class="dts-admin-panel">
         <div class="dts-panel-title"><i></i><h2>Ajouter un utilisateur</h2></div>
         <div class="dts-admin-form-grid">
           <label><span>Pseudo</span><input type="text" value="{{ newUserPseudo }}" onChange="{{ onNewUserPseudo }}" onKeyDown="{{ onNewUserKey }}" autoComplete="off"></input></label>
@@ -563,6 +582,38 @@ input { outline: none; }
         <div style="display:flex;gap:12px;justify-content:flex-end">
           <button onClick="{{ cancelDelete }}" style="background:transparent;border:1px solid #273042;border-radius:6px;padding:10px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:2px;color:#9DA4B3;text-transform:uppercase;cursor:pointer;transition:border-color 0.15s, color 0.15s" style-hover="border-color:#848D9C;color:#F5F5F7">Annuler</button>
           <button onClick="{{ confirmDelete }}" style="background:linear-gradient(95deg, #FF2D55, #C4001F);border:none;border-radius:6px;padding:10px 18px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;letter-spacing:2px;color:#FFFFFF;text-transform:uppercase;cursor:pointer;box-shadow:0 0 18px rgba(255,45,85,0.35)" style-hover="box-shadow:0 0 28px rgba(255,45,85,0.55)">{{ deleteLabel }}</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- éditeur manuel des informations du catalogue -->
+  <sc-if value="{{ metadataEditorOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:95;background:rgba(5,7,12,.88);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;padding:22px" onClick="{{ closeMetadataEditor }}">
+      <div style="width:940px;max-width:96vw;max-height:92vh;overflow:auto;padding:28px;border-radius:16px;background:linear-gradient(145deg,#171C27,#0B0E14);border:1px solid #354057;box-shadow:0 28px 90px rgba(0,0,0,.82),0 0 45px rgba(118,87,255,.12);display:flex;flex-direction:column;gap:22px" onClick="{{ stopClick }}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:18px">
+          <div><div class="dts-kicker">MODIFICATION MANUELLE</div><h2 style="margin:4px 0 0;font-family:'Barlow Condensed',sans-serif;font-size:34px;letter-spacing:1.6px;text-transform:uppercase;color:#FFF">{{ metadataEditorHeading }}</h2><div style="margin-top:5px;color:#8F98A8;font-size:13px">Dossier Drive : {{ metadataOriginalTitle }}</div></div>
+          <button onClick="{{ closeMetadataEditor }}" class="dts-outline-btn">✕ Fermer</button>
+        </div>
+        <div style="padding:12px 14px;border-radius:9px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.22);color:#B8DFF4;font-size:13px;line-height:1.55">Les informations enregistrées ici ont priorité sur TMDB et restent conservées après une actualisation du catalogue. Utilise « Restaurer TMDB » pour revenir aux données automatiques.</div>
+        <div class="dts-metadata-grid" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px">
+          <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Titre affiché</span><input type="text" value="{{ metadataTitle }}" onChange="{{ onMetadataTitle }}" style="height:46px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Synopsis / description</span><textarea value="{{ metadataSynopsis }}" onChange="{{ onMetadataSynopsis }}" rows="6" style="resize:vertical;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:12px 13px;outline:none;line-height:1.55"></textarea></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Année</span><input type="text" value="{{ metadataYear }}" onChange="{{ onMetadataYear }}" placeholder="2026" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Durée</span><input type="text" value="{{ metadataDuration }}" onChange="{{ onMetadataDuration }}" placeholder="1h45 ou 24 min" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Genres, séparés par des virgules</span><input type="text" value="{{ metadataGenres }}" onChange="{{ onMetadataGenres }}" placeholder="Action, Aventure, Fantastique" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Classification</span><input type="text" value="{{ metadataCertification }}" onChange="{{ onMetadataCertification }}" placeholder="12, 16, TV-14…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Note sur 10</span><input type="number" min="0" max="10" step="0.1" value="{{ metadataNote }}" onChange="{{ onMetadataNote }}" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Langue originale</span><input type="text" value="{{ metadataLanguage }}" onChange="{{ onMetadataLanguage }}" placeholder="fr, en, ja…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Acteurs / voix</span><input type="text" value="{{ metadataActors }}" onChange="{{ onMetadataActors }}" placeholder="Nom 1, Nom 2…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Réalisateurs / créateurs</span><input type="text" value="{{ metadataDirectors }}" onChange="{{ onMetadataDirectors }}" placeholder="Nom 1, Nom 2…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">URL de l’affiche</span><input type="url" value="{{ metadataPosterUrl }}" onChange="{{ onMetadataPosterUrl }}" placeholder="https://…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">URL de la bannière / arrière-plan</span><input type="url" value="{{ metadataBackdropUrl }}" onChange="{{ onMetadataBackdropUrl }}" placeholder="https://…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">URL de la bande-annonce YouTube</span><input type="url" value="{{ metadataTrailerUrl }}" onChange="{{ onMetadataTrailerUrl }}" placeholder="https://www.youtube.com/watch?v=…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:4px">
+          <div><sc-if value="{{ metadataHasManual }}" hint-placeholder-val="{{ false }}"><button onClick="{{ resetContentMetadata }}" class="dts-outline-btn" style="border-color:#FF9F43;color:#FFC37D">{{ resetContentMetadataLabel }}</button></sc-if></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap"><button onClick="{{ closeMetadataEditor }}" class="dts-outline-btn">Annuler</button><button onClick="{{ saveContentMetadata }}" class="dts-primary-btn">{{ saveContentMetadataLabel }}</button></div>
         </div>
       </div>
     </div>
@@ -721,6 +772,8 @@ class Component extends DCLogic {
     nextEpisodePrompt: false, nextEpisodeCountdown: 0,
     estAdmin: false,
     users: null, usersLoading: false, usersError: '', dashboard: null, dashboardLoading: false, dashboardError: '', refreshingLibrary: false,
+    adminCatalogQuery: '', adminCatalogType: 'tous', editingContent: null, savingContentMetadata: false, resettingContentMetadata: false,
+    metadataTitle: '', metadataSynopsis: '', metadataYear: '', metadataDuration: '', metadataGenres: '', metadataCertification: '', metadataNote: '', metadataLanguage: '', metadataActors: '', metadataDirectors: '', metadataPosterUrl: '', metadataBackdropUrl: '', metadataTrailerUrl: '',
     newUserPseudo: '', newUserPassword: '', newUserExpires: '', newUserMaxDevices: '3', addingUser: false,
     editingPseudo: '', editExpires: '', editMaxDevices: '3', savingUser: false, resettingDevices: false,
     confirmPseudo: '', deleting: false,
@@ -736,7 +789,7 @@ class Component extends DCLogic {
     setTimeout(() => this.setState(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), 3500);
   }
 
-  openAdmin = () => { this.setState({ view: 'admin' }, () => { this.loadUsers(); this.loadDashboard(); }); };
+  openAdmin = () => { this.setState({ view: 'admin' }, () => { this.loadUsers(); this.loadDashboard(); if (!this.state.library) this.loadLibrary(); }); };
 
   loadDashboard = async () => {
     this.setState({ dashboardLoading: true, dashboardError: '' });
@@ -763,6 +816,107 @@ class Component extends DCLogic {
       this.toast('Actualisation impossible.', false);
     }
   };
+
+  onAdminCatalogQuery = (e) => this.setState({ adminCatalogQuery: e.target.value });
+  onAdminCatalogType = (e) => this.setState({ adminCatalogType: e.target.value });
+
+  openMetadataEditor = (item, kind) => {
+    if (!item) return;
+    const category = item.categorie || (kind === 'film' ? 'films' : kind);
+    this.setState({
+      editingContent: { item: item, kind: kind, category: category, id: item.contenu_id },
+      metadataTitle: item.titre || '',
+      metadataSynopsis: item.synopsis || '',
+      metadataYear: item.annee || '',
+      metadataDuration: item.duree || item.duree_drive || '',
+      metadataGenres: Array.isArray(item.genres) ? item.genres.join(', ') : (item.genres || ''),
+      metadataCertification: item.certification || '',
+      metadataNote: item.note == null ? '' : String(item.note),
+      metadataLanguage: item.langue_originale || '',
+      metadataActors: Array.isArray(item.acteurs) ? item.acteurs.join(', ') : (item.acteurs || ''),
+      metadataDirectors: Array.isArray(item.realisateurs) ? item.realisateurs.join(', ') : (item.realisateurs || ''),
+      metadataPosterUrl: item.poster_url || '',
+      metadataBackdropUrl: item.backdrop_url || '',
+      metadataTrailerUrl: item.bande_annonce_url || '',
+    });
+  };
+
+  closeMetadataEditor = () => {
+    if (this.state.savingContentMetadata || this.state.resettingContentMetadata) return;
+    this.setState({ editingContent: null });
+  };
+
+  _metadataList = (value) => String(value || '').split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
+
+  saveContentMetadata = async () => {
+    const editor = this.state.editingContent;
+    if (!editor || !editor.id || this.state.savingContentMetadata) return;
+    if (!String(this.state.metadataTitle || '').trim()) { this.toast('Le titre affiché est obligatoire.', false); return; }
+    const noteText = String(this.state.metadataNote || '').trim();
+    const note = noteText === '' ? null : Number(noteText);
+    if (noteText !== '' && (!isFinite(note) || note < 0 || note > 10)) { this.toast('La note doit être comprise entre 0 et 10.', false); return; }
+    this.setState({ savingContentMetadata: true });
+    try {
+      const res = await this.authFetch('/admin/catalogue/' + encodeURIComponent(editor.category) + '/' + encodeURIComponent(editor.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titre: String(this.state.metadataTitle || '').trim(),
+          synopsis: String(this.state.metadataSynopsis || '').trim(),
+          annee: String(this.state.metadataYear || '').trim(),
+          duree: String(this.state.metadataDuration || '').trim(),
+          genres: this._metadataList(this.state.metadataGenres),
+          certification: String(this.state.metadataCertification || '').trim(),
+          note: note,
+          langue_originale: String(this.state.metadataLanguage || '').trim(),
+          acteurs: this._metadataList(this.state.metadataActors),
+          realisateurs: this._metadataList(this.state.metadataDirectors),
+          poster_url: String(this.state.metadataPosterUrl || '').trim(),
+          backdrop_url: String(this.state.metadataBackdropUrl || '').trim(),
+          bande_annonce_url: String(this.state.metadataTrailerUrl || '').trim(),
+        })
+      });
+      if (res.status === 401 || res.status === 403) return this.sessionExpired();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || ('Erreur ' + res.status));
+      this.toast('Informations de « ' + this.state.metadataTitle + ' » enregistrées.', true);
+      this.setState({ savingContentMetadata: false, editingContent: null }, () => { this.loadLibrary(); this.loadDashboard(); });
+    } catch (e) {
+      this.setState({ savingContentMetadata: false });
+      this.toast(e && e.message ? e.message : 'Enregistrement impossible.', false);
+    }
+  };
+
+  resetContentMetadata = async () => {
+    const editor = this.state.editingContent;
+    if (!editor || !editor.id || this.state.resettingContentMetadata) return;
+    this.setState({ resettingContentMetadata: true });
+    try {
+      const res = await this.authFetch('/admin/catalogue/' + encodeURIComponent(editor.category) + '/' + encodeURIComponent(editor.id), { method: 'DELETE' });
+      if (res.status === 401 || res.status === 403) return this.sessionExpired();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || ('Erreur ' + res.status));
+      this.toast('Les informations automatiques ont été restaurées.', true);
+      this.setState({ resettingContentMetadata: false, editingContent: null }, () => { this.loadLibrary(); this.loadDashboard(); });
+    } catch (e) {
+      this.setState({ resettingContentMetadata: false });
+      this.toast(e && e.message ? e.message : 'Réinitialisation impossible.', false);
+    }
+  };
+
+  onMetadataTitle = (e) => this.setState({ metadataTitle: e.target.value });
+  onMetadataSynopsis = (e) => this.setState({ metadataSynopsis: e.target.value });
+  onMetadataYear = (e) => this.setState({ metadataYear: e.target.value });
+  onMetadataDuration = (e) => this.setState({ metadataDuration: e.target.value });
+  onMetadataGenres = (e) => this.setState({ metadataGenres: e.target.value });
+  onMetadataCertification = (e) => this.setState({ metadataCertification: e.target.value });
+  onMetadataNote = (e) => this.setState({ metadataNote: e.target.value });
+  onMetadataLanguage = (e) => this.setState({ metadataLanguage: e.target.value });
+  onMetadataActors = (e) => this.setState({ metadataActors: e.target.value });
+  onMetadataDirectors = (e) => this.setState({ metadataDirectors: e.target.value });
+  onMetadataPosterUrl = (e) => this.setState({ metadataPosterUrl: e.target.value });
+  onMetadataBackdropUrl = (e) => this.setState({ metadataBackdropUrl: e.target.value });
+  onMetadataTrailerUrl = (e) => this.setState({ metadataTrailerUrl: e.target.value });
 
   loadUsers = async () => {
     this.setState({ usersLoading: true, usersError: '' });
@@ -2047,7 +2201,7 @@ class Component extends DCLogic {
   }
 
   _mapItem(it, kind) {
-      const url = this.state.posters[it.poster_id] || it.poster_tmdb_url || null;
+      const url = it.poster_url || this.state.posters[it.poster_id] || it.poster_tmdb_url || null;
       const duree = it.duree || it.duree_drive || it.duration || null;
       const annee = it.date_sortie || it.annee || it.date || it.year || null;
       const note = it.note != null ? it.note : (it.rating != null ? it.rating : null);
@@ -2148,7 +2302,7 @@ class Component extends DCLogic {
       const duration = Number(progress && typeof progress === 'object' ? progress.duration : 0) || 0;
       const updatedAt = Number(progress && typeof progress === 'object' ? progress.updatedAt : 0) || 0;
       if (time < 20 || (duration > 0 && time / duration >= .95)) return null;
-      const url = s.posters[entry.poster_id] || (entry.raw && entry.raw.poster_tmdb_url) || null;
+      const url = (entry.raw && entry.raw.poster_url) || s.posters[entry.poster_id] || (entry.raw && entry.raw.poster_tmdb_url) || null;
       const pct = duration > 0 ? Math.min(100, Math.max(2, time / duration * 100)) : 12;
       return Object.assign({
         titre: entry.titre, posterUrl: url, posterEl: this._posterEl(url, entry.titre), isFilm: entry.kind === 'film',
@@ -2181,7 +2335,9 @@ class Component extends DCLogic {
       { label: 'Nouveautés', accent: '#7657FF', glow: 'rgba(118,87,255,0.3)', items: nouveautes, count: String(nouveautes.length) },
       { label: 'Tendances', accent: '#E82967', glow: 'rgba(232,41,103,0.35)', items: tendances, count: String(tendances.length) },
       { label: 'Votre historique', accent: '#7657FF', glow: 'rgba(118,87,255,0.3)', isHistory: true, count: String(s.history.length), items: s.history.map(h => {
-        const url = s.posters[h.poster_id] || null;
+        const historyMatch = videoEntries.find(v => v.video_id === h.video_id);
+        const historyRaw = historyMatch && historyMatch.raw;
+        const url = (historyRaw && historyRaw.poster_url) || s.posters[h.poster_id] || (historyRaw && historyRaw.poster_tmdb_url) || null;
         const noop = (e) => { e.stopPropagation(); };
         return Object.assign({
           titre: h.titre, posterUrl: url, posterEl: this._posterEl(url, h.titre),
@@ -2200,7 +2356,7 @@ class Component extends DCLogic {
         })));
       }) },
       { label: 'Ma Liste', accent: '#E82967', glow: 'rgba(232,41,103,0.35)', count: String(s.myList.length), items: s.myList.map(m => {
-        const url = s.posters[m.poster_id] || null;
+        const url = (m.raw && m.raw.poster_url) || s.posters[m.poster_id] || (m.raw && m.raw.poster_tmdb_url) || null;
         const noop = (e) => { e.stopPropagation(); };
         return Object.assign({
           titre: m.titre, posterUrl: url, posterEl: this._posterEl(url, m.titre),
@@ -2257,6 +2413,30 @@ class Component extends DCLogic {
     const pct = dur > 0 ? (s.currentTime / dur) * 100 : 0;
     const controlsOn = s.controlsVisible || !s.playing;
 
+    const adminQuery = String(s.adminCatalogQuery || '').trim().toLowerCase();
+    const adminPool = pool.filter(p =>
+      (s.adminCatalogType === 'tous' || p.kind === s.adminCatalogType) &&
+      (!adminQuery || this._searchText(p.it, p.kind).includes(adminQuery) || String(p.it.titre_original || '').toLowerCase().includes(adminQuery))
+    ).sort((a,b) => String(a.it.titre || '').localeCompare(String(b.it.titre || ''), 'fr'));
+    const adminCatalogItems = adminPool.map(p => {
+      const it = p.it;
+      const posterUrl = it.poster_url || s.posters[it.poster_id] || it.poster_tmdb_url || null;
+      const kindLabel = p.kind === 'film' ? 'Film' : (p.kind === 'anime' ? 'Anime' : 'Série');
+      const hasDescription = !!String(it.synopsis || '').trim();
+      return {
+        title: it.titre || it.titre_original || 'Sans titre',
+        posterEl: this._posterEl(posterUrl, it.titre || ''),
+        kindLabel: kindLabel,
+        kindBg: p.kind === 'series' ? 'rgba(118,87,255,.15)' : (p.kind === 'anime' ? 'rgba(232,41,103,.15)' : 'rgba(56,189,248,.15)'),
+        kindColor: p.kind === 'series' ? '#AFA2FF' : (p.kind === 'anime' ? '#FF79A5' : '#7DD3FC'),
+        manual: !!it.metadata_manuel,
+        metaLine: [it.annee, Array.isArray(it.genres) ? it.genres.slice(0,3).join(', ') : '', it.titre_original && it.titre_original !== it.titre ? ('Dossier : ' + it.titre_original) : ''].filter(Boolean).join(' • ') || 'Aucune information complémentaire',
+        descriptionLabel: hasDescription ? 'Description disponible' : 'Description manquante',
+        descriptionColor: hasDescription ? '#63E6BE' : '#FF9F43',
+        edit: () => this.openMetadataEditor(it, p.kind),
+      };
+    });
+
     return {
       isLogin: s.view === 'login',
       isLibrary: s.view === 'library',
@@ -2306,7 +2486,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v5.1-descriptions-auto',
+      appVersion: 'v5.2-edition-infos',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError,
@@ -2398,8 +2578,8 @@ class Component extends DCLogic {
       detailTitle: show ? show.titre : '',
       detailKind: s.showKind === 'film' ? 'Film' : (s.showKind === 'anime' ? 'Anime' : 'Série'),
       detailAccent: s.showKind === 'anime' ? '#E82967' : '#7657FF',
-      detailPosterUrl: show ? (s.posters[show.poster_id] || show.poster_tmdb_url || null) : null,
-      detailPosterEl: show ? this._posterEl(s.posters[show.poster_id] || show.poster_tmdb_url || null, show.titre) : null,
+      detailPosterUrl: show ? (show.poster_url || s.posters[show.poster_id] || show.poster_tmdb_url || null) : null,
+      detailPosterEl: show ? this._posterEl(show.poster_url || s.posters[show.poster_id] || show.poster_tmdb_url || null, show.titre) : null,
       detailSynopsis: show ? (show.synopsis || '') : '', detailHasSynopsis: !!(show && show.synopsis),
       detailGenres: show && Array.isArray(show.genres) ? show.genres : [], detailHasGenres: !!(show && show.genres && show.genres.length),
       detailActors: show && Array.isArray(show.acteurs) ? show.acteurs.join(', ') : '', detailHasActors: !!(show && show.acteurs && show.acteurs.length),
@@ -2487,6 +2667,19 @@ class Component extends DCLogic {
         {label:'FFprobe',ok:!!s.dashboard.ffprobe,color:s.dashboard.ffprobe?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.ffprobe?'OK':'Erreur'}
       ] : [],
       refreshLibraryAdmin: this.refreshLibraryAdmin, refreshLibraryLabel: s.refreshingLibrary ? 'Actualisation…' : 'Actualiser le catalogue',
+      adminCatalogQuery: s.adminCatalogQuery, onAdminCatalogQuery: this.onAdminCatalogQuery,
+      adminCatalogType: s.adminCatalogType, onAdminCatalogType: this.onAdminCatalogType,
+      adminCatalogItems: adminCatalogItems, adminCatalogCount: String(adminCatalogItems.length),
+      adminCatalogLoading: s.libLoading && !s.library, adminCatalogEmpty: !s.libLoading && adminCatalogItems.length === 0,
+      metadataEditorOpen: !!s.editingContent,
+      metadataEditorHeading: s.editingContent ? (s.editingContent.kind === 'film' ? 'Modifier le film' : (s.editingContent.kind === 'anime' ? 'Modifier l’anime' : 'Modifier la série')) : '',
+      metadataOriginalTitle: s.editingContent && s.editingContent.item ? (s.editingContent.item.titre_original || s.editingContent.item.titre || '') : '',
+      metadataHasManual: !!(s.editingContent && s.editingContent.item && s.editingContent.item.metadata_manuel),
+      metadataTitle: s.metadataTitle, metadataSynopsis: s.metadataSynopsis, metadataYear: s.metadataYear, metadataDuration: s.metadataDuration, metadataGenres: s.metadataGenres, metadataCertification: s.metadataCertification, metadataNote: s.metadataNote, metadataLanguage: s.metadataLanguage, metadataActors: s.metadataActors, metadataDirectors: s.metadataDirectors, metadataPosterUrl: s.metadataPosterUrl, metadataBackdropUrl: s.metadataBackdropUrl, metadataTrailerUrl: s.metadataTrailerUrl,
+      onMetadataTitle: this.onMetadataTitle, onMetadataSynopsis: this.onMetadataSynopsis, onMetadataYear: this.onMetadataYear, onMetadataDuration: this.onMetadataDuration, onMetadataGenres: this.onMetadataGenres, onMetadataCertification: this.onMetadataCertification, onMetadataNote: this.onMetadataNote, onMetadataLanguage: this.onMetadataLanguage, onMetadataActors: this.onMetadataActors, onMetadataDirectors: this.onMetadataDirectors, onMetadataPosterUrl: this.onMetadataPosterUrl, onMetadataBackdropUrl: this.onMetadataBackdropUrl, onMetadataTrailerUrl: this.onMetadataTrailerUrl,
+      saveContentMetadata: this.saveContentMetadata, saveContentMetadataLabel: s.savingContentMetadata ? 'Enregistrement…' : 'Enregistrer',
+      resetContentMetadata: this.resetContentMetadata, resetContentMetadataLabel: s.resettingContentMetadata ? 'Restauration…' : 'Restaurer TMDB',
+      closeMetadataEditor: this.closeMetadataEditor,
       users: (s.users || []).map(u => {
         const obj = typeof u === 'string' ? { pseudo:u, max_devices:3, device_count:0, expires_at:null, devices:[] } : u;
         const p = obj.pseudo || '';
