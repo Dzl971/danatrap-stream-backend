@@ -9,7 +9,7 @@ from googleapiclient.http import MediaIoBaseUpload
 from pydantic import BaseModel
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any
 import bcrypt
 import pickle
 import os
@@ -24,6 +24,7 @@ import threading
 import time
 import shutil
 import re
+import hashlib
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
@@ -33,6 +34,9 @@ CLE_SECRETE_JWT = os.environ.get('CLE_SECRETE_JWT', 'change-moi-en-production')
 ALGORITHME = "HS256"
 DUREE_TOKEN_JOURS = 30
 ADMIN_PSEUDO = "Dzl 971"
+USERS_CACHE_TTL = int(os.environ.get("USERS_CACHE_TTL", "30"))
+LIBRARY_CACHE_TTL = int(os.environ.get("LIBRARY_CACHE_TTL", "300"))
+DEFAULT_MAX_DEVICES = max(1, int(os.environ.get("DEFAULT_MAX_DEVICES", "3")))
 
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY', '')
 cache_tmdb = {}
@@ -145,40 +149,134 @@ def trouver_fichier_utilisateurs(service, racine_id):
     fichiers = resultats.get('files', [])
     return fichiers[0]['id'] if fichiers else None
 
-def charger_utilisateurs():
+_USERS_CACHE: dict[str, Any] = {"cached_at": 0.0, "data": None}
+_USERS_CACHE_LOCK = threading.Lock()
+
+
+def _normaliser_fiche_utilisateur(fiche: Any) -> dict:
+    """Rend les anciens fichiers utilisateurs compatibles avec les nouvelles options."""
+    if isinstance(fiche, str):
+        fiche = {"mot_de_passe_hash": fiche}
+    if not isinstance(fiche, dict):
+        fiche = {}
+    resultat = dict(fiche)
+    resultat.setdefault("mot_de_passe_hash", "")
+    resultat.setdefault("expires_at", None)
+    try:
+        resultat["max_devices"] = max(1, int(resultat.get("max_devices") or DEFAULT_MAX_DEVICES))
+    except (TypeError, ValueError):
+        resultat["max_devices"] = DEFAULT_MAX_DEVICES
+    devices = resultat.get("devices")
+    resultat["devices"] = devices if isinstance(devices, dict) else {}
+    resultat.setdefault("created_at", None)
+    return resultat
+
+
+def charger_utilisateurs(force: bool = False):
+    now = time.time()
+    with _USERS_CACHE_LOCK:
+        cached = _USERS_CACHE.get("data")
+        if not force and isinstance(cached, dict) and now - float(_USERS_CACHE.get("cached_at") or 0) < USERS_CACHE_TTL:
+            return {pseudo: _normaliser_fiche_utilisateur(fiche) for pseudo, fiche in cached.items()}
+
     if CREDENTIALS is None:
         _charger_si_manquant()
     service = build('drive', 'v3', credentials=CREDENTIALS)
     racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        return {}
     fichier_id = trouver_fichier_utilisateurs(service, racine_id)
     if not fichier_id:
         return {}
     access_token = get_access_token()
     url = f"https://www.googleapis.com/drive/v3/files/{fichier_id}?alt=media"
-    reponse = requests.get(url, headers={'Authorization': f'Bearer {access_token}'})
-    return reponse.json()
+    reponse = requests.get(url, headers={'Authorization': f'Bearer {access_token}'}, timeout=20)
+    reponse.raise_for_status()
+    data = reponse.json()
+    if not isinstance(data, dict):
+        data = {}
+    normalise = {pseudo: _normaliser_fiche_utilisateur(fiche) for pseudo, fiche in data.items()}
+    with _USERS_CACHE_LOCK:
+        _USERS_CACHE["cached_at"] = now
+        _USERS_CACHE["data"] = normalise
+    return {pseudo: dict(fiche) for pseudo, fiche in normalise.items()}
+
 
 def sauvegarder_utilisateurs(utilisateurs):
+    _charger_si_manquant()
     service = build('drive', 'v3', credentials=CREDENTIALS)
     racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        raise RuntimeError("Dossier racine 'Danatrap Stream' introuvable sur Google Drive")
     fichier_id = trouver_fichier_utilisateurs(service, racine_id)
-    contenu_json = json.dumps(utilisateurs, indent=2, ensure_ascii=False)
-    media = MediaIoBaseUpload(io.BytesIO(contenu_json.encode('utf-8')), mimetype='application/json')
+    normalise = {pseudo: _normaliser_fiche_utilisateur(fiche) for pseudo, fiche in utilisateurs.items()}
+    contenu_json = json.dumps(normalise, indent=2, ensure_ascii=False)
+    media = MediaIoBaseUpload(io.BytesIO(contenu_json.encode('utf-8')), mimetype='application/json', resumable=False)
     if fichier_id:
         service.files().update(fileId=fichier_id, media_body=media).execute()
     else:
         metadata = {'name': 'utilisateurs.json', 'parents': [racine_id]}
         service.files().create(body=metadata, media_body=media, fields='id').execute()
+    with _USERS_CACHE_LOCK:
+        _USERS_CACHE["cached_at"] = time.time()
+        _USERS_CACHE["data"] = normalise
+
 
 def verifier_mot_de_passe(mot_de_passe_clair, mot_de_passe_hash):
-    return bcrypt.checkpw(mot_de_passe_clair.encode('utf-8'), mot_de_passe_hash.encode('utf-8'))
+    try:
+        return bcrypt.checkpw(mot_de_passe_clair.encode('utf-8'), str(mot_de_passe_hash).encode('utf-8'))
+    except Exception:
+        return False
 
-def creer_token(pseudo):
+
+def _expiration_datetime(expires_at: Optional[str]) -> Optional[datetime]:
+    if not expires_at:
+        return None
+    texte = str(expires_at).strip()
+    if not texte:
+        return None
+    try:
+        if len(texte) == 10:
+            return datetime.strptime(texte, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        parsed = datetime.fromisoformat(texte.replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone().replace(tzinfo=None)
+        return parsed
+    except (TypeError, ValueError):
+        return None
+
+
+def _compte_expire(fiche: dict) -> bool:
+    expiration = _expiration_datetime(fiche.get("expires_at"))
+    return bool(expiration and datetime.utcnow() > expiration)
+
+
+def _nettoyer_device_id(device_id: Optional[str]) -> str:
+    brut = re.sub(r"[^A-Za-z0-9_.:-]", "", str(device_id or ""))[:128]
+    return brut
+
+
+def _device_legacy(pseudo: str, user_agent: str) -> str:
+    digest = hashlib.sha256(f"{pseudo}|{user_agent}".encode("utf-8", errors="ignore")).hexdigest()[:24]
+    return f"legacy-{digest}"
+
+
+def creer_token(pseudo: str, device_id: Optional[str] = None, expires_at: Optional[str] = None):
     expiration = datetime.utcnow() + timedelta(days=DUREE_TOKEN_JOURS)
-    donnees = {"sub": pseudo, "exp": expiration, "est_admin": pseudo == ADMIN_PSEUDO}
+    expiration_compte = _expiration_datetime(expires_at)
+    if expiration_compte and expiration_compte < expiration:
+        expiration = expiration_compte
+    donnees = {
+        "sub": pseudo,
+        "exp": expiration,
+        "est_admin": pseudo == ADMIN_PSEUDO,
+        "device_id": device_id or "",
+    }
     return jwt.encode(donnees, CLE_SECRETE_JWT, algorithm=ALGORITHME)
 
+
 security = HTTPBearer()
+
 
 def verifier_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
@@ -187,14 +285,56 @@ def verifier_token(credentials: HTTPAuthorizationCredentials = Depends(security)
         pseudo = payload.get("sub")
         if pseudo is None:
             raise HTTPException(status_code=401, detail="Token invalide")
-        return {"pseudo": pseudo, "est_admin": payload.get("est_admin", False)}
+        utilisateurs = charger_utilisateurs()
+        fiche = utilisateurs.get(pseudo)
+        if not fiche:
+            raise HTTPException(status_code=401, detail="Compte introuvable")
+        if _compte_expire(fiche):
+            raise HTTPException(status_code=403, detail="Ce compte a expiré")
+        device_id = _nettoyer_device_id(payload.get("device_id"))
+        # Les anciens jetons sans device_id restent valides jusqu'à leur expiration.
+        if device_id and device_id not in (fiche.get("devices") or {}):
+            raise HTTPException(status_code=401, detail="Cet appareil a été déconnecté")
+        return {
+            "pseudo": pseudo,
+            "est_admin": payload.get("est_admin", False),
+            "device_id": device_id,
+            "expires_at": fiche.get("expires_at"),
+            "max_devices": fiche.get("max_devices", DEFAULT_MAX_DEVICES),
+        }
+    except HTTPException:
+        raise
     except JWTError:
         raise HTTPException(status_code=401, detail="Token invalide ou expire")
+
 
 def verifier_admin(utilisateur: dict = Depends(verifier_token)):
     if not utilisateur.get("est_admin") and utilisateur.get("pseudo") != ADMIN_PSEUDO:
         raise HTTPException(status_code=403, detail="Acces reserve a l'administrateur")
     return utilisateur["pseudo"]
+
+
+def _fiche_publique(pseudo: str, fiche: dict) -> dict:
+    devices = fiche.get("devices") or {}
+    liste_devices = []
+    for device_id, device in devices.items():
+        device = device if isinstance(device, dict) else {}
+        liste_devices.append({
+            "id": device_id,
+            "name": device.get("name") or "Appareil inconnu",
+            "first_seen": device.get("first_seen"),
+            "last_seen": device.get("last_seen"),
+        })
+    liste_devices.sort(key=lambda d: d.get("last_seen") or "", reverse=True)
+    return {
+        "pseudo": pseudo,
+        "expires_at": fiche.get("expires_at"),
+        "expired": _compte_expire(fiche),
+        "max_devices": int(fiche.get("max_devices") or DEFAULT_MAX_DEVICES),
+        "device_count": len(devices),
+        "devices": liste_devices,
+        "created_at": fiche.get("created_at"),
+    }
 
 # ==================== APP FASTAPI ====================
 app = FastAPI()
@@ -210,18 +350,52 @@ app.add_middleware(
 class LoginRequest(BaseModel):
     pseudo: str
     mot_de_passe: str
+    device_id: Optional[str] = None
+    device_name: Optional[str] = None
+
 
 @app.post("/login")
-def login(data: LoginRequest):
+def login(data: LoginRequest, request: Request):
     import traceback
     try:
-        utilisateurs = charger_utilisateurs()
+        utilisateurs = charger_utilisateurs(force=True)
         utilisateur = utilisateurs.get(data.pseudo)
-        if not utilisateur or not verifier_mot_de_passe(data.mot_de_passe, utilisateur["mot_de_passe_hash"]):
+        if not utilisateur or not verifier_mot_de_passe(data.mot_de_passe, utilisateur.get("mot_de_passe_hash", "")):
             raise HTTPException(status_code=401, detail="Pseudo ou mot de passe incorrect")
-        token = creer_token(data.pseudo)
-        est_admin = (data.pseudo == ADMIN_PSEUDO)
-        return {"access_token": token, "pseudo": data.pseudo, "est_admin": est_admin}
+        if _compte_expire(utilisateur):
+            raise HTTPException(status_code=403, detail="Ce compte a expiré. Contacte l’administrateur.")
+
+        device_id = _nettoyer_device_id(data.device_id)
+        if not device_id:
+            device_id = _device_legacy(data.pseudo, request.headers.get("user-agent", "navigateur"))
+        device_name = str(data.device_name or request.headers.get("user-agent") or "Navigateur").strip()[:120]
+        devices = utilisateur.setdefault("devices", {})
+        max_devices = max(1, int(utilisateur.get("max_devices") or DEFAULT_MAX_DEVICES))
+        if device_id not in devices and len(devices) >= max_devices and data.pseudo != ADMIN_PSEUDO:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Limite de {max_devices} appareil(s) atteinte. Demande à l’administrateur de déconnecter un ancien appareil.",
+            )
+        maintenant = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        ancien = devices.get(device_id) if isinstance(devices.get(device_id), dict) else {}
+        devices[device_id] = {
+            "name": device_name or ancien.get("name") or "Appareil",
+            "first_seen": ancien.get("first_seen") or maintenant,
+            "last_seen": maintenant,
+        }
+        utilisateurs[data.pseudo] = utilisateur
+        sauvegarder_utilisateurs(utilisateurs)
+
+        token = creer_token(data.pseudo, device_id, utilisateur.get("expires_at"))
+        est_admin = data.pseudo == ADMIN_PSEUDO
+        return {
+            "access_token": token,
+            "pseudo": data.pseudo,
+            "est_admin": est_admin,
+            "expires_at": utilisateur.get("expires_at"),
+            "max_devices": max_devices,
+            "device_count": len(devices),
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -230,30 +404,79 @@ def login(data: LoginRequest):
             f.write("\n\n=== " + datetime.now().isoformat() + " ===\n" + tb)
         raise HTTPException(status_code=500, detail=f"Erreur: {type(e).__name__}: {e}")
 
+
 @app.get("/me")
 def me(utilisateur: dict = Depends(verifier_token)):
-    return {"pseudo": utilisateur["pseudo"], "est_admin": utilisateur.get("est_admin", False)}
+    return utilisateur
+
 
 class NouvelUtilisateur(BaseModel):
     pseudo: str
     mot_de_passe: str
+    expires_at: Optional[str] = None
+    max_devices: Optional[int] = DEFAULT_MAX_DEVICES
+
+
+class MiseAJourUtilisateur(BaseModel):
+    expires_at: Optional[str] = None
+    max_devices: Optional[int] = None
+
 
 @app.post("/admin/ajouter-utilisateur")
 def ajouter_utilisateur(data: NouvelUtilisateur, admin: str = Depends(verifier_admin)):
-    utilisateurs = charger_utilisateurs()
+    pseudo = data.pseudo.strip()
+    if not pseudo or not data.mot_de_passe:
+        raise HTTPException(status_code=400, detail="Pseudo et mot de passe requis")
+    utilisateurs = charger_utilisateurs(force=True)
     mot_de_passe_hash = bcrypt.hashpw(data.mot_de_passe.encode('utf-8'), bcrypt.gensalt())
-    utilisateurs[data.pseudo] = {"mot_de_passe_hash": mot_de_passe_hash.decode('utf-8')}
+    utilisateurs[pseudo] = {
+        "mot_de_passe_hash": mot_de_passe_hash.decode('utf-8'),
+        "expires_at": data.expires_at or None,
+        "max_devices": max(1, min(20, int(data.max_devices or DEFAULT_MAX_DEVICES))),
+        "devices": {},
+        "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
     sauvegarder_utilisateurs(utilisateurs)
-    return {"message": f"Utilisateur '{data.pseudo}' ajoute avec succes"}
+    return {"message": f"Utilisateur '{pseudo}' ajoute avec succes", "utilisateur": _fiche_publique(pseudo, utilisateurs[pseudo])}
+
 
 @app.get("/admin/liste-utilisateurs")
 def liste_utilisateurs(admin: str = Depends(verifier_admin)):
-    utilisateurs = charger_utilisateurs()
-    return {"utilisateurs": list(utilisateurs.keys())}
+    utilisateurs = charger_utilisateurs(force=True)
+    return {"utilisateurs": [_fiche_publique(pseudo, fiche) for pseudo, fiche in sorted(utilisateurs.items(), key=lambda x: x[0].lower())]}
+
+
+@app.patch("/admin/utilisateur/{pseudo}")
+def mettre_a_jour_utilisateur(pseudo: str, data: MiseAJourUtilisateur, admin: str = Depends(verifier_admin)):
+    utilisateurs = charger_utilisateurs(force=True)
+    if pseudo not in utilisateurs:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    fiche = utilisateurs[pseudo]
+    if data.max_devices is not None:
+        fiche["max_devices"] = max(1, min(20, int(data.max_devices)))
+    # Une chaîne vide enlève la date d'expiration.
+    if data.expires_at is not None:
+        fiche["expires_at"] = str(data.expires_at).strip() or None
+    utilisateurs[pseudo] = fiche
+    sauvegarder_utilisateurs(utilisateurs)
+    return {"message": "Compte mis à jour", "utilisateur": _fiche_publique(pseudo, fiche)}
+
+
+@app.post("/admin/utilisateur/{pseudo}/deconnecter-appareils")
+def deconnecter_appareils(pseudo: str, admin: str = Depends(verifier_admin)):
+    utilisateurs = charger_utilisateurs(force=True)
+    if pseudo not in utilisateurs:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if pseudo == ADMIN_PSEUDO:
+        raise HTTPException(status_code=400, detail="Le compte administrateur ne peut pas être déconnecté depuis cette action")
+    utilisateurs[pseudo]["devices"] = {}
+    sauvegarder_utilisateurs(utilisateurs)
+    return {"message": f"Tous les appareils de '{pseudo}' ont été déconnectés"}
+
 
 @app.delete("/admin/supprimer-utilisateur/{pseudo}")
 def supprimer_utilisateur(pseudo: str, admin: str = Depends(verifier_admin)):
-    utilisateurs = charger_utilisateurs()
+    utilisateurs = charger_utilisateurs(force=True)
     if pseudo not in utilisateurs:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
     if pseudo == ADMIN_PSEUDO:
@@ -289,20 +512,100 @@ def trouver_dossier_flexible(service, noms_possibles, parent_id=None):
 
 def lister_contenu(service, parent_id):
     query = f"'{parent_id}' in parents and trashed = false"
-    resultats = service.files().list(q=query, fields="files(id, name, mimeType)").execute()
+    resultats = service.files().list(
+        q=query,
+        fields="files(id,name,mimeType,modifiedTime,size,videoMediaMetadata(width,height,durationMillis))",
+        pageSize=1000,
+    ).execute()
     return resultats.get('files', [])
 
+
+def _qualite_video(fichier: Optional[dict]) -> Optional[str]:
+    if not fichier:
+        return None
+    meta = fichier.get("videoMediaMetadata") or {}
+    try:
+        hauteur = int(meta.get("height") or 0)
+    except (TypeError, ValueError):
+        hauteur = 0
+    if hauteur >= 2160:
+        return "4K"
+    if hauteur >= 1440:
+        return "1440p"
+    if hauteur >= 1080:
+        return "1080p"
+    if hauteur >= 720:
+        return "720p"
+    if hauteur >= 480:
+        return "480p"
+    return None
+
+
+def _duree_drive(fichier: Optional[dict]) -> Optional[str]:
+    if not fichier:
+        return None
+    try:
+        total_sec = int((fichier.get("videoMediaMetadata") or {}).get("durationMillis") or 0) // 1000
+    except (TypeError, ValueError):
+        total_sec = 0
+    if total_sec <= 0:
+        return None
+    heures, reste = divmod(total_sec, 3600)
+    minutes = reste // 60
+    return f"{heures}h{minutes:02d}" if heures else f"{minutes} min"
+
+
+def _choisir_bande_annonce(videos: dict) -> Optional[str]:
+    resultats = videos.get("results", []) if isinstance(videos, dict) else []
+    youtube = [v for v in resultats if v.get("site") == "YouTube" and v.get("key")]
+    if not youtube:
+        return None
+    def score(video):
+        type_video = str(video.get("type") or "").lower()
+        nom = str(video.get("name") or "").lower()
+        return (
+            4 if type_video == "trailer" else 2 if type_video == "teaser" else 0,
+            2 if video.get("official") else 0,
+            1 if "fr" in str(video.get("iso_639_1") or "").lower() else 0,
+            1 if "bande-annonce" in nom or "trailer" in nom else 0,
+        )
+    choix = sorted(youtube, key=score, reverse=True)[0]
+    return f"https://www.youtube.com/watch?v={choix['key']}"
+
+
+def _choisir_certification(details: dict, type_contenu: str) -> Optional[str]:
+    if type_contenu == "film":
+        resultats = (details.get("release_dates") or {}).get("results", [])
+        pays = next((r for r in resultats if r.get("iso_3166_1") == "FR"), None) or next((r for r in resultats if r.get("iso_3166_1") == "US"), None)
+        certifications = [str(x.get("certification") or "").strip() for x in (pays or {}).get("release_dates", [])]
+        return next((c for c in certifications if c), None)
+    resultats = (details.get("content_ratings") or {}).get("results", [])
+    pays = next((r for r in resultats if r.get("iso_3166_1") == "FR"), None) or next((r for r in resultats if r.get("iso_3166_1") == "US"), None)
+    valeur = str((pays or {}).get("rating") or "").strip()
+    return valeur or None
+
+def _nettoyer_titre_tmdb(titre: str) -> str:
+    """Retire automatiquement les marqueurs de fichier qui perturbent la recherche TMDB."""
+    propre = re.sub(r"\[[^\]]*\]|\([^)]*(?:4k|1080p|720p|vf|vostfr|multi)[^)]*\)", " ", str(titre or ""), flags=re.I)
+    propre = re.sub(r"\b(?:4k|2160p|1080p|720p|480p|uhd|bluray|web[- .]?dl|webrip|x264|x265|hevc|multi|vostfr|vf2?|truefrench)\b", " ", propre, flags=re.I)
+    propre = re.sub(r"[._]+", " ", propre)
+    propre = re.sub(r"\s+", " ", propre).strip(" -_")
+    return propre or str(titre or "").strip()
+
+
 def rechercher_tmdb(titre, type_contenu="film"):
-    cle_cache = f"{type_contenu}:{titre.lower()}"
+    titre_recherche = _nettoyer_titre_tmdb(titre)
+    cle_cache = f"{type_contenu}:{titre_recherche.lower()}"
     if cle_cache in cache_tmdb:
         return cache_tmdb[cle_cache]
     if not TMDB_API_KEY:
         return {}
     endpoint = "movie" if type_contenu == "film" else "tv"
     url_recherche = f"https://api.themoviedb.org/3/search/{endpoint}"
-    params = {"api_key": TMDB_API_KEY, "query": titre, "language": "fr-FR"}
+    params = {"api_key": TMDB_API_KEY, "query": titre_recherche, "language": "fr-FR", "include_adult": "false"}
     try:
-        reponse = requests.get(url_recherche, params=params, timeout=5)
+        reponse = requests.get(url_recherche, params=params, timeout=8)
+        reponse.raise_for_status()
         resultats = reponse.json().get('results', [])
         if not resultats:
             cache_tmdb[cle_cache] = {}
@@ -310,7 +613,13 @@ def rechercher_tmdb(titre, type_contenu="film"):
         premier = resultats[0]
         tmdb_id = premier['id']
         url_details = f"https://api.themoviedb.org/3/{endpoint}/{tmdb_id}"
-        reponse_details = requests.get(url_details, params={"api_key": TMDB_API_KEY, "language": "fr-FR"}, timeout=5)
+        append = "credits,videos,release_dates" if type_contenu == "film" else "credits,videos,content_ratings"
+        reponse_details = requests.get(
+            url_details,
+            params={"api_key": TMDB_API_KEY, "language": "fr-FR", "append_to_response": append},
+            timeout=10,
+        )
+        reponse_details.raise_for_status()
         details = reponse_details.json()
         genres = [g['name'] for g in details.get('genres', [])]
         if type_contenu == "film":
@@ -321,16 +630,29 @@ def rechercher_tmdb(titre, type_contenu="film"):
             duree_minutes = durees[0] if durees else 0
             date_sortie = details.get('first_air_date', '')
         annee = date_sortie[:4] if date_sortie else None
-        heures = duree_minutes // 60
-        minutes = duree_minutes % 60
-        duree_texte = f"{heures}h{minutes:02d}" if duree_minutes else None
+        heures = int(duree_minutes or 0) // 60
+        minutes = int(duree_minutes or 0) % 60
+        duree_texte = (f"{heures}h{minutes:02d}" if heures else f"{minutes} min") if duree_minutes else None
+        cast = [p.get("name") for p in (details.get("credits") or {}).get("cast", [])[:8] if p.get("name")]
+        realisateurs = [
+            p.get("name") for p in (details.get("credits") or {}).get("crew", [])
+            if p.get("job") in {"Director", "Creator"} and p.get("name")
+        ][:4]
         resultat = {
+            "tmdb_id": tmdb_id,
             "genres": genres,
             "duree": duree_texte,
             "annee": annee,
-            "note": round(details.get('vote_average', 0), 1),
+            "note": round(float(details.get('vote_average', 0) or 0), 1),
             "synopsis": details.get('overview', ''),
-            "backdrop_url": f"https://image.tmdb.org/t/p/w1280{details.get('backdrop_path')}" if details.get('backdrop_path') else None
+            "backdrop_url": f"https://image.tmdb.org/t/p/w1280{details.get('backdrop_path')}" if details.get('backdrop_path') else None,
+            "poster_tmdb_url": f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get('poster_path') else None,
+            "acteurs": cast,
+            "realisateurs": realisateurs,
+            "certification": _choisir_certification(details, type_contenu),
+            "bande_annonce_url": _choisir_bande_annonce(details.get("videos") or {}),
+            "langue_originale": details.get("original_language"),
+            "popularite": round(float(details.get("popularity", 0) or 0), 2),
         }
         cache_tmdb[cle_cache] = resultat
         return resultat
@@ -338,61 +660,129 @@ def rechercher_tmdb(titre, type_contenu="film"):
         print(f"Erreur TMDB pour '{titre}': {e}")
         return {}
 
+
 def scanner_films(service, films_id):
     films = []
     for dossier in lister_contenu(service, films_id):
         if dossier['mimeType'] == 'application/vnd.google-apps.folder':
             contenu = lister_contenu(service, dossier['id'])
             video = next((f for f in contenu if f['mimeType'].startswith('video/')), None)
-            poster = next((f for f in contenu if f['name'].lower() == 'icon.jpg'), None)
+            poster = next((f for f in contenu if f['name'].lower() in {'icon.jpg', 'icon.jpeg', 'icon.png', 'poster.jpg', 'poster.png'}), None)
             infos_tmdb = rechercher_tmdb(dossier['name'], "film")
             films.append({
                 "titre": dossier['name'],
                 "video_id": video['id'] if video else None,
+                "video_nom": video.get('name') if video else None,
                 "poster_id": poster['id'] if poster else None,
+                "date_ajout": dossier.get("modifiedTime") or (video or {}).get("modifiedTime"),
+                "qualite": _qualite_video(video),
+                "duree_drive": _duree_drive(video),
                 **infos_tmdb
             })
+    films.sort(key=lambda f: f.get("date_ajout") or "", reverse=True)
     return films
+
 
 def scanner_series(service, series_id):
     series = []
     for dossier_serie in lister_contenu(service, series_id):
         if dossier_serie['mimeType'] == 'application/vnd.google-apps.folder':
             contenu_serie = lister_contenu(service, dossier_serie['id'])
-            poster = next((f for f in contenu_serie if f['name'].lower() == 'icon.jpg'), None)
+            poster = next((f for f in contenu_serie if f['name'].lower() in {'icon.jpg', 'icon.jpeg', 'icon.png', 'poster.jpg', 'poster.png'}), None)
             saisons = []
             for dossier_saison in contenu_serie:
                 if dossier_saison['mimeType'] == 'application/vnd.google-apps.folder':
                     episodes_bruts = lister_contenu(service, dossier_saison['id'])
                     episodes = [
-                        {"nom": ep['name'], "video_id": ep['id']}
+                        {
+                            "nom": ep['name'],
+                            "video_id": ep['id'],
+                            "qualite": _qualite_video(ep),
+                            "duree": _duree_drive(ep),
+                            "date_ajout": ep.get("modifiedTime"),
+                        }
                         for ep in episodes_bruts if ep['mimeType'].startswith('video/')
                     ]
-                    saisons.append({"nom_saison": dossier_saison['name'], "episodes": episodes})
+                    saisons.append({"nom_saison": dossier_saison['name'], "episodes": episodes, "date_ajout": dossier_saison.get("modifiedTime")})
             infos_tmdb = rechercher_tmdb(dossier_serie['name'], "tv")
             series.append({
                 "titre": dossier_serie['name'],
                 "poster_id": poster['id'] if poster else None,
+                "date_ajout": dossier_serie.get("modifiedTime"),
                 "saisons": saisons,
                 **infos_tmdb
             })
+    series.sort(key=lambda f: f.get("date_ajout") or "", reverse=True)
     return series
+
+
+_LIBRARY_CACHE: dict[str, Any] = {"cached_at": 0.0, "data": None}
+_LIBRARY_CACHE_LOCK = threading.Lock()
+
+
+def _scanner_bibliotheque(force: bool = False) -> dict:
+    now = time.time()
+    with _LIBRARY_CACHE_LOCK:
+        cached = _LIBRARY_CACHE.get("data")
+        if not force and isinstance(cached, dict) and now - float(_LIBRARY_CACHE.get("cached_at") or 0) < LIBRARY_CACHE_TTL:
+            return cached
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = get_id_dossier(service, "Danatrap Stream")
+    if not racine_id:
+        raise HTTPException(status_code=404, detail="Dossier 'Danatrap Stream' introuvable sur Google Drive")
+    films_id = trouver_dossier_flexible(service, ["Films", "FILMS", "films"], racine_id)
+    series_id = trouver_dossier_flexible(service, ["Séries", "Series", "SÉRIES", "SERIES", "séries", "series"], racine_id)
+    anime_id = trouver_dossier_flexible(service, ["Animes", "Anime", "ANIMES", "ANIME", "animes", "anime"], racine_id)
+    data = {
+        "films": scanner_films(service, films_id) if films_id else [],
+        "series": scanner_series(service, series_id) if series_id else [],
+        "anime": scanner_series(service, anime_id) if anime_id else [],
+        "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    with _LIBRARY_CACHE_LOCK:
+        _LIBRARY_CACHE["cached_at"] = now
+        _LIBRARY_CACHE["data"] = data
+    return data
+
 
 # ==================== ROUTES PROTEGEES ====================
 @app.get("/bibliotheque")
 def get_bibliotheque(utilisateur: dict = Depends(verifier_token)):
-    pseudo = utilisateur["pseudo"]
-    _charger_si_manquant()
-    service = build('drive', 'v3', credentials=CREDENTIALS)
-    racine_id = get_id_dossier(service, "Danatrap Stream")
-    films_id = trouver_dossier_flexible(service, ["Films", "FILMS", "films"], racine_id)
-    series_id = trouver_dossier_flexible(service, ["Séries", "Series", "SÉRIES", "SERIES", "séries", "series"], racine_id)
-    anime_id = trouver_dossier_flexible(service, ["Animes", "Anime", "ANIMES", "ANIME", "animes", "anime"], racine_id)
+    return _scanner_bibliotheque()
+
+
+@app.post("/admin/rafraichir-bibliotheque")
+def rafraichir_bibliotheque(admin: str = Depends(verifier_admin)):
+    with _LIBRARY_CACHE_LOCK:
+        _LIBRARY_CACHE["cached_at"] = 0.0
+        _LIBRARY_CACHE["data"] = None
+    cache_tmdb.clear()
+    data = _scanner_bibliotheque(force=True)
+    return {"message": "Bibliothèque actualisée", "generated_at": data.get("generated_at")}
+
+
+@app.get("/admin/dashboard")
+def dashboard_admin(admin: str = Depends(verifier_admin)):
+    utilisateurs = charger_utilisateurs(force=True)
+    bibliotheque = _scanner_bibliotheque()
+    nb_episodes_series = sum(len(saison.get("episodes", [])) for serie in bibliotheque.get("series", []) for saison in serie.get("saisons", []))
+    nb_episodes_anime = sum(len(saison.get("episodes", [])) for serie in bibliotheque.get("anime", []) for saison in serie.get("saisons", []))
     return {
-        "films": scanner_films(service, films_id) if films_id else [],
-        "series": scanner_series(service, series_id) if series_id else [],
-        "anime": scanner_series(service, anime_id) if anime_id else []
+        "utilisateurs": len(utilisateurs),
+        "comptes_expires": sum(1 for fiche in utilisateurs.values() if _compte_expire(fiche)),
+        "appareils": sum(len(fiche.get("devices") or {}) for fiche in utilisateurs.values()),
+        "films": len(bibliotheque.get("films", [])),
+        "series": len(bibliotheque.get("series", [])),
+        "anime": len(bibliotheque.get("anime", [])),
+        "episodes": nb_episodes_series + nb_episodes_anime,
+        "ffmpeg": bool(shutil.which("ffmpeg")),
+        "ffprobe": bool(shutil.which("ffprobe")),
+        "drive": CREDENTIALS is not None,
+        "cache_pistes": len(_TRACKS_CACHE) if "_TRACKS_CACHE" in globals() else 0,
+        "bibliotheque_generee": bibliotheque.get("generated_at"),
     }
+
 
 @app.get("/stream/{video_id}")
 def stream_video(
@@ -503,7 +893,7 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
         "-headers", _get_drive_auth_header(),
         "-v", "error",
         "-show_entries",
-        "format=duration:stream=index,codec_name,codec_type:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
+        "format=duration:stream=index,codec_name,codec_type,width,height:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
         "-of", "json",
         _get_drive_media_url(video_id),
     ]
@@ -563,12 +953,21 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
         duration = 0.0
 
     primary_video = video_streams[0] if video_streams else {}
+    try:
+        largeur = int(primary_video.get("width") or 0)
+        hauteur = int(primary_video.get("height") or 0)
+    except (TypeError, ValueError):
+        largeur, hauteur = 0, 0
+    qualite = "4K" if hauteur >= 2160 else "1440p" if hauteur >= 1440 else "1080p" if hauteur >= 1080 else "720p" if hauteur >= 720 else "480p" if hauteur >= 480 else None
     data = {
         "audio": audio,
         "subtitles": subtitles,
         "duration": duration,
         "video_stream_index": primary_video.get("index"),
         "video_codec": primary_video.get("codec_name", ""),
+        "width": largeur,
+        "height": hauteur,
+        "quality": qualite,
     }
     with _TRACKS_CACHE_LOCK:
         _TRACKS_CACHE[video_id] = {"cached_at": now, "data": data}
