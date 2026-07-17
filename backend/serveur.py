@@ -5,7 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request as GoogleRequest
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaFileUpload
 from pydantic import BaseModel
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
@@ -60,6 +60,29 @@ _POSTER_LOCKS_GUARD = threading.Lock()
 _THUMBNAIL_MAP_LOCK = threading.Lock()
 _THUMBNAIL_PERSIST_SEMAPHORE = threading.Semaphore(2)
 _STATIC_GZIP_CACHE: dict[str, tuple[float, bytes]] = {}
+
+# ==================== AUDIO UNIVERSEL DTS ====================
+# Les pistes incompatibles avec les navigateurs sont converties une seule fois
+# en AAC-LC stéréo 48 kHz, puis conservées dans Google Drive. Le fichier vidéo
+# original n'est jamais modifié.
+AUDIO_COMPATIBILITY_FILENAME = "dts_audio_compatibility.json"
+AUDIO_CACHE_PARENT_FOLDER = "Cache DTS"
+AUDIO_CACHE_FOLDER_NAME = "Audio compatible"
+AUDIO_CACHE_BITRATE = str(os.environ.get("AUDIO_CACHE_BITRATE", "160k")).strip() or "160k"
+AUTO_AUDIO_PREPARE = str(os.environ.get("AUTO_AUDIO_PREPARE", "1")).strip().lower() not in {"0", "false", "non", "no"}
+AUDIO_CACHE_LOCAL_DIR = pathlib.Path(tempfile.gettempdir()) / "dts_audio_compatible"
+AUDIO_CACHE_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+_AUDIO_MAPPING_LOCK = threading.Lock()
+_AUDIO_CONVERSION_LOCKS: dict[str, threading.Lock] = {}
+_AUDIO_CONVERSION_LOCKS_GUARD = threading.Lock()
+_AUDIO_CONVERSION_SEMAPHORE = threading.Semaphore(1)
+_AUDIO_PREPARE_LOCK = threading.Lock()
+_AUDIO_PREPARE_JOB: dict[str, Any] = {
+    "running": False, "phase": "idle", "progress": 0, "total": 0,
+    "videos": 0, "tracks": 0, "direct_compatible": 0, "prepared": 0,
+    "pending": 0, "errors": 0, "current": "", "items": [],
+    "started_at": None, "finished_at": None, "error": None,
+}
 
 
 # ==================== CONNEXION GOOGLE DRIVE ====================
@@ -646,6 +669,7 @@ def creer_sauvegarde_drive(admin: str = "SYSTEM", automatique: bool = False) -> 
         "utilisateurs": charger_utilisateurs(force=True),
         "catalogue_metadata": charger_metadata_catalogue(force=True),
         "sorties": charger_sorties(force=True),
+        "audio_compatibility": _charger_json_drive(AUDIO_COMPATIBILITY_FILENAME, {}, force=True),
         "admin_logs": _charger_json_drive(ADMIN_LOGS_FILENAME, [], force=True),
     }
     media = MediaIoBaseUpload(io.BytesIO(json.dumps(payload, indent=2, ensure_ascii=False).encode('utf-8')), mimetype='application/json', resumable=False)
@@ -1547,7 +1571,14 @@ def rafraichir_bibliotheque(admin: str = Depends(verifier_admin)):
     data = _scanner_bibliotheque(force=True)
     _journaliser_admin(admin, "Catalogue actualisé", {"generated_at": data.get("generated_at")})
     _assurer_sauvegarde_quotidienne()
-    return {"message": "Bibliothèque actualisée", "generated_at": data.get("generated_at")}
+    audio_job = None
+    if AUTO_AUDIO_PREPARE:
+        audio_job = _demarrer_preparation_audio(admin="SYSTEM", force=False)
+    return {
+        "message": "Bibliothèque actualisée",
+        "generated_at": data.get("generated_at"),
+        "audio_preparation_started": bool(audio_job and audio_job.get("running")),
+    }
 
 
 def _categorie_catalogue_valide(categorie: str) -> str:
@@ -1866,6 +1897,8 @@ def dashboard_admin(admin: str = Depends(verifier_admin)):
             if not str(contenu.get("synopsis") or "").strip()
         ),
         "cache_pistes": len(_TRACKS_CACHE) if "_TRACKS_CACHE" in globals() else 0,
+        "audio_cache_drive": sum(1 for v in _charger_audio_mapping(force=False).values() if isinstance(v, dict) and v.get("file_id")),
+        "audio_job_running": bool(_audio_job_snapshot().get("running")),
         "bibliotheque_generee": bibliotheque.get("generated_at"),
         "sorties_planifiees": len(bibliotheque.get("sorties") or []),
         "collections": len(bibliotheque.get("collections") or []),
@@ -1973,6 +2006,137 @@ def _get_drive_auth_header() -> str:
     return f"Authorization: Bearer {access_token}\r\n"
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _audio_cache_key(video_id: str, track_index: int) -> str:
+    return f"{video_id}:{int(track_index)}"
+
+
+def _audio_conversion_lock(video_id: str, track_index: int) -> threading.Lock:
+    key = _audio_cache_key(video_id, track_index)
+    with _AUDIO_CONVERSION_LOCKS_GUARD:
+        return _AUDIO_CONVERSION_LOCKS.setdefault(key, threading.Lock())
+
+
+def _audio_compatibility(track: dict) -> dict:
+    """Détermine si une piste peut rester telle quelle dans tous les navigateurs.
+
+    Même une piste marquée compatible peut être normalisée à la volée par /mux
+    afin de réparer ses timestamps. Les pistes non compatibles sont en plus
+    préparées et conservées sur Drive pour les lectures suivantes.
+    """
+    codec = str(track.get("codec") or "").strip().lower()
+    profile = str(track.get("profile") or "").strip().lower()
+    sample_rate = _safe_int(track.get("sample_rate"))
+    channels = _safe_int(track.get("channels"))
+    reasons = []
+    if codec != "aac":
+        reasons.append(f"codec {codec.upper() or 'inconnu'}")
+    if codec == "aac" and any(tag in profile for tag in ("he-aac", "he_aac", "sbr", "aac he")):
+        reasons.append("profil HE-AAC")
+    if channels > 2:
+        reasons.append(f"{channels} canaux")
+    if sample_rate and sample_rate not in {44100, 48000}:
+        reasons.append(f"{sample_rate} Hz")
+    if channels <= 0:
+        reasons.append("nombre de canaux inconnu")
+    needs_conversion = bool(reasons)
+    return {
+        "needs_conversion": needs_conversion,
+        "browser_compatible": not needs_conversion,
+        "compatibility_reason": ", ".join(reasons) if reasons else "AAC compatible",
+        "target_codec": "AAC-LC",
+        "target_channels": 2,
+        "target_sample_rate": 48000,
+        "target_bitrate": AUDIO_CACHE_BITRATE,
+    }
+
+
+def _audio_track_fingerprint(video_id: str, track: dict, media: dict) -> str:
+    payload = {
+        "video_id": str(video_id),
+        "track_index": _safe_int(track.get("index"), -1),
+        "stream_index": _safe_int(track.get("stream_index"), -1),
+        "codec": str(track.get("codec") or ""),
+        "profile": str(track.get("profile") or ""),
+        "sample_rate": _safe_int(track.get("sample_rate")),
+        "channels": _safe_int(track.get("channels")),
+        "channel_layout": str(track.get("channel_layout") or ""),
+        "start_time": round(_safe_float(track.get("start_time")), 6),
+        "duration": round(_safe_float(media.get("duration")), 3),
+        "video_start_time": round(_safe_float(media.get("video_start_time")), 6),
+        "target": f"aac-lc|stereo|48000|{AUDIO_CACHE_BITRATE}",
+    }
+    brut = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(brut).hexdigest()[:24]
+
+
+def _charger_audio_mapping(force: bool = False) -> dict:
+    data = _charger_json_drive(AUDIO_COMPATIBILITY_FILENAME, {}, force=force)
+    return data if isinstance(data, dict) else {}
+
+
+def _audio_cache_entry(video_id: str, track: dict, media: dict, mapping: Optional[dict] = None) -> Optional[dict]:
+    mapping = mapping if isinstance(mapping, dict) else _charger_audio_mapping(force=False)
+    entry = mapping.get(_audio_cache_key(video_id, _safe_int(track.get("index"), -1)))
+    if not isinstance(entry, dict) or not entry.get("file_id"):
+        return None
+    if str(entry.get("fingerprint") or "") != _audio_track_fingerprint(video_id, track, media):
+        return None
+    return entry
+
+
+def _annoter_pistes_audio(video_id: str, media: dict) -> dict:
+    resultat = json.loads(json.dumps(media, ensure_ascii=False))
+    try:
+        mapping = _charger_audio_mapping(force=False)
+    except Exception:
+        mapping = {}
+    for track in resultat.get("audio") or []:
+        compat = _audio_compatibility(track)
+        entry = _audio_cache_entry(video_id, track, resultat, mapping)
+        track.update(compat)
+        track["cache_ready"] = bool(entry)
+        track["cache_status"] = "optimisee" if entry else ("a_preparer" if compat["needs_conversion"] else "compatible")
+        track["cache_label"] = "Optimisée sur Drive" if entry else ("Conversion automatique" if compat["needs_conversion"] else "Compatible")
+    return resultat
+
+
+def _audio_alignment_filter(media: dict, track: dict) -> str:
+    """Crée une piste alignée sur le début de la vidéo avant son cache Drive."""
+    video_start = _safe_float(media.get("video_start_time"), _safe_float(media.get("format_start_time"), 0.0))
+    audio_start = _safe_float(track.get("start_time"), video_start)
+    delta = audio_start - video_start
+    filters = []
+    if delta > 0.025:
+        filters.append(f"adelay={max(0, int(round(delta * 1000)))}:all=1")
+    elif delta < -0.025:
+        filters.extend([f"atrim=start={abs(delta):.6f}", "asetpts=PTS-STARTPTS"])
+    filters.append("aresample=48000:async=1000:min_hard_comp=0.100:first_pts=0")
+    return ",".join(filters)
+
+
+def _audio_universal_codec_args(filter_chain: Optional[str] = None) -> list[str]:
+    filtre = filter_chain or "aresample=48000:async=1000:min_hard_comp=0.100:first_pts=0"
+    return [
+        "-af", filtre,
+        "-c:a", "aac", "-profile:a", "aac_low",
+        "-b:a", AUDIO_CACHE_BITRATE, "-ar", "48000", "-ac", "2",
+    ]
+
+
 _TRACKS_CACHE: dict[str, dict] = {}
 _TRACKS_CACHE_TTL = int(os.environ.get("TRACKS_CACHE_TTL", "3600"))
 _TRACKS_CACHE_LOCK = threading.Lock()
@@ -2017,7 +2181,7 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
         "-headers", _get_drive_auth_header(),
         "-v", "error",
         "-show_entries",
-        "format=duration:stream=index,codec_name,codec_type,width,height:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
+        "format=start_time,duration:stream=index,codec_name,codec_long_name,profile,codec_type,width,height,sample_rate,channels,channel_layout,bit_rate,start_time,duration:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
         "-of", "json",
         _get_drive_media_url(video_id),
     ]
@@ -2055,6 +2219,14 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
             "language": _normaliser_langue(tags),
             "title": _format_track_label(tags, "audio", i),
             "codec": stream.get("codec_name", ""),
+            "codec_long_name": stream.get("codec_long_name", ""),
+            "profile": stream.get("profile", ""),
+            "sample_rate": _safe_int(stream.get("sample_rate")),
+            "channels": _safe_int(stream.get("channels")),
+            "channel_layout": stream.get("channel_layout", ""),
+            "bit_rate": _safe_int(stream.get("bit_rate")),
+            "start_time": _safe_float(stream.get("start_time")),
+            "stream_duration": _safe_float(stream.get("duration")),
             "default": bool((stream.get("disposition") or {}).get("default", 0)),
         })
 
@@ -2083,10 +2255,14 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
     except (TypeError, ValueError):
         largeur, hauteur = 0, 0
     qualite = "4K" if hauteur >= 2160 else "1440p" if hauteur >= 1440 else "1080p" if hauteur >= 1080 else "720p" if hauteur >= 720 else "480p" if hauteur >= 480 else None
+    format_start_time = _safe_float((probe_data.get("format") or {}).get("start_time"), 0.0)
+    video_start_time = _safe_float(primary_video.get("start_time"), format_start_time)
     data = {
         "audio": audio,
         "subtitles": subtitles,
         "duration": duration,
+        "format_start_time": format_start_time,
+        "video_start_time": video_start_time,
         "video_stream_index": primary_video.get("index"),
         "video_codec": primary_video.get("codec_name", ""),
         "width": largeur,
@@ -2098,12 +2274,286 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
     return data
 
 
+def _enumerer_videos_audio(bibliotheque: Optional[dict] = None) -> list[dict]:
+    bibliotheque = bibliotheque if isinstance(bibliotheque, dict) else _scanner_bibliotheque()
+    videos: list[dict] = []
+    vus: set[str] = set()
+    for item in bibliotheque.get("films") or []:
+        video_id = str(item.get("video_id") or "").strip()
+        if video_id and video_id not in vus:
+            vus.add(video_id)
+            videos.append({"video_id": video_id, "titre": str(item.get("titre") or "Film")})
+    for categorie in ("series", "anime"):
+        for item in bibliotheque.get(categorie) or []:
+            titre_serie = str(item.get("titre") or ("Anime" if categorie == "anime" else "Série"))
+            for saison in item.get("saisons") or []:
+                saison_nom = str(saison.get("nom") or "")
+                for ep in saison.get("episodes") or []:
+                    video_id = str(ep.get("video_id") or "").strip()
+                    if not video_id or video_id in vus:
+                        continue
+                    vus.add(video_id)
+                    ep_nom = str(ep.get("nom") or "Épisode")
+                    suffixe = " — ".join(v for v in (saison_nom, ep_nom) if v)
+                    videos.append({"video_id": video_id, "titre": titre_serie + (" — " + suffixe if suffixe else "")})
+    return videos
+
+
+def _audio_cache_filename(video_id: str, track_index: int, fingerprint: str, language: str = "") -> str:
+    lang = re.sub(r"[^A-Za-z0-9_-]", "", str(language or "").lower())[:12] or "und"
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", str(video_id))[:80]
+    return f"{safe_id}_audio_{int(track_index)}_{lang}_{fingerprint[:12]}.m4a"
+
+
+def _upload_audio_cache_drive(local_path: pathlib.Path, filename: str, previous_file_id: Optional[str] = None) -> dict:
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        raise RuntimeError("Dossier racine 'Danatrap Stream' introuvable sur Google Drive")
+    parent_cache = _trouver_ou_creer_dossier(service, racine_id, AUDIO_CACHE_PARENT_FOLDER)
+    audio_folder = _trouver_ou_creer_dossier(service, parent_cache, AUDIO_CACHE_FOLDER_NAME)
+    upload = MediaFileUpload(
+        str(local_path), mimetype="audio/mp4", resumable=True, chunksize=8 * 1024 * 1024
+    )
+    resultat = None
+    if previous_file_id:
+        try:
+            resultat = service.files().update(
+                fileId=str(previous_file_id), body={"name": filename}, media_body=upload, fields="id,name,size"
+            ).execute()
+        except Exception as exc:
+            print(f"[DTS] ancien cache audio inutilisable, nouveau fichier créé: {exc}")
+            upload = MediaFileUpload(str(local_path), mimetype="audio/mp4", resumable=True, chunksize=8 * 1024 * 1024)
+    if not resultat:
+        resultat = service.files().create(
+            body={"name": filename, "parents": [audio_folder]},
+            media_body=upload, fields="id,name,size"
+        ).execute()
+    return resultat or {}
+
+
+def _preparer_piste_audio_compatible(video_id: str, track_index: int, titre: str = "", force: bool = False) -> dict:
+    track_index = int(track_index)
+    lock = _audio_conversion_lock(video_id, track_index)
+    with lock, _AUDIO_CONVERSION_SEMAPHORE:
+        media = _probe_media(video_id, force=False)
+        tracks = media.get("audio") or []
+        if track_index < 0 or track_index >= len(tracks):
+            raise RuntimeError("Piste audio introuvable")
+        selected = tracks[track_index]
+        fingerprint = _audio_track_fingerprint(video_id, selected, media)
+        with _AUDIO_MAPPING_LOCK:
+            mapping = _charger_audio_mapping(force=True)
+            existing = mapping.get(_audio_cache_key(video_id, track_index)) if isinstance(mapping, dict) else None
+        if not force and isinstance(existing, dict) and existing.get("file_id") and existing.get("fingerprint") == fingerprint:
+            return dict(existing)
+
+        filename = _audio_cache_filename(video_id, track_index, fingerprint, selected.get("language") or "")
+        local_path = AUDIO_CACHE_LOCAL_DIR / filename
+        try:
+            local_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err",
+            "-headers", _get_drive_auth_header(),
+            "-i", _get_drive_media_url(video_id),
+            "-map", f"0:{selected.get('stream_index')}",
+            "-vn", "-sn", "-dn",
+            *_audio_universal_codec_args(_audio_alignment_filter(media, selected)),
+            "-map_metadata", "-1",
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            str(local_path),
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True)
+        except FileNotFoundError as exc:
+            raise RuntimeError("ffmpeg n'est pas installé sur Render") from exc
+        if result.returncode != 0 or not local_path.exists() or local_path.stat().st_size <= 1024:
+            error = result.stderr.decode("utf-8", errors="replace").strip()[-1600:]
+            try:
+                local_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise RuntimeError(error or "Conversion audio impossible")
+
+        previous_id = existing.get("file_id") if isinstance(existing, dict) else None
+        try:
+            fichier = _upload_audio_cache_drive(local_path, filename, previous_file_id=previous_id)
+            file_id = str(fichier.get("id") or "")
+            if not file_id:
+                raise RuntimeError("Google Drive n'a pas renvoyé l'identifiant du cache audio")
+            entry = {
+                "file_id": file_id, "name": str(fichier.get("name") or filename),
+                "size": _safe_int(fichier.get("size"), int(local_path.stat().st_size)),
+                "fingerprint": fingerprint, "video_id": video_id, "track_index": track_index,
+                "title": str(titre or ""), "track_title": str(selected.get("title") or f"Audio {track_index + 1}"),
+                "language": str(selected.get("language") or ""), "source_codec": str(selected.get("codec") or ""),
+                "source_profile": str(selected.get("profile") or ""),
+                "source_channels": _safe_int(selected.get("channels")),
+                "source_sample_rate": _safe_int(selected.get("sample_rate")),
+                "target": f"AAC-LC stéréo 48 kHz {AUDIO_CACHE_BITRATE}",
+                "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            }
+            with _AUDIO_MAPPING_LOCK:
+                mapping = _charger_audio_mapping(force=True)
+                mapping[_audio_cache_key(video_id, track_index)] = entry
+                _sauvegarder_json_drive(AUDIO_COMPATIBILITY_FILENAME, mapping)
+            return entry
+        finally:
+            try:
+                local_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+def _planifier_piste_audio(video_id: str, track_index: int, titre: str = "") -> None:
+    def runner():
+        try:
+            media = _probe_media(video_id)
+            tracks = media.get("audio") or []
+            if track_index < 0 or track_index >= len(tracks):
+                return
+            selected = tracks[track_index]
+            if _audio_cache_entry(video_id, selected, media):
+                return
+            _preparer_piste_audio_compatible(video_id, track_index, titre=titre, force=False)
+            print(f"[DTS] piste audio universelle prête: {video_id}/{track_index}")
+        except Exception as exc:
+            print(f"[DTS] préparation audio en arrière-plan impossible {video_id}/{track_index}: {exc}")
+    threading.Thread(target=runner, daemon=True).start()
+
+
+def _audio_job_snapshot() -> dict:
+    with _AUDIO_PREPARE_LOCK:
+        return json.loads(json.dumps(_AUDIO_PREPARE_JOB, ensure_ascii=False))
+
+
+def _executer_preparation_audio(force: bool = False, admin: str = "SYSTEM") -> None:
+    global _AUDIO_PREPARE_JOB
+    try:
+        with _AUDIO_PREPARE_LOCK:
+            _AUDIO_PREPARE_JOB.update({"phase": "analyse", "current": "Analyse du catalogue…"})
+        bibliotheque = _scanner_bibliotheque(force=False)
+        videos = _enumerer_videos_audio(bibliotheque)
+        items = []
+        pending_tasks = []
+        direct = prepared = errors = tracks_total = 0
+        mapping = _charger_audio_mapping(force=True)
+        with _AUDIO_PREPARE_LOCK:
+            _AUDIO_PREPARE_JOB["videos"] = len(videos)
+        for video_pos, video in enumerate(videos, start=1):
+            titre = video["titre"]
+            video_id = video["video_id"]
+            with _AUDIO_PREPARE_LOCK:
+                _AUDIO_PREPARE_JOB["current"] = f"Analyse {video_pos}/{len(videos)} — {titre}"
+            try:
+                media = _probe_media(video_id, force=False)
+                for track in media.get("audio") or []:
+                    tracks_total += 1
+                    compat = _audio_compatibility(track)
+                    entry = _audio_cache_entry(video_id, track, media, mapping)
+                    item = {
+                        "video_id": video_id, "track_index": _safe_int(track.get("index")),
+                        "titre": titre, "track": str(track.get("title") or "Audio"),
+                        "codec": str(track.get("codec") or "inconnu").upper(),
+                        "details": compat.get("compatibility_reason"),
+                        "status": "compatible", "error": "",
+                    }
+                    if entry and not force:
+                        item["status"] = "prepared"
+                        prepared += 1
+                    elif compat.get("needs_conversion") or force:
+                        item["status"] = "pending"
+                        pending_tasks.append((video_id, _safe_int(track.get("index")), titre, item))
+                    else:
+                        direct += 1
+                    if item["status"] != "compatible":
+                        items.append(item)
+            except Exception as exc:
+                errors += 1
+                items.append({"video_id": video_id, "track_index": -1, "titre": titre, "track": "Analyse", "codec": "—", "details": "", "status": "error", "error": str(exc)[:800]})
+            with _AUDIO_PREPARE_LOCK:
+                _AUDIO_PREPARE_JOB.update({
+                    "tracks": tracks_total, "direct_compatible": direct, "prepared": prepared,
+                    "pending": len(pending_tasks), "errors": errors, "items": list(items[-300:]),
+                })
+
+        total = len(pending_tasks)
+        with _AUDIO_PREPARE_LOCK:
+            _AUDIO_PREPARE_JOB.update({"phase": "conversion", "total": total, "progress": 0, "pending": total})
+        for pos, (video_id, track_index, titre, item) in enumerate(pending_tasks, start=1):
+            with _AUDIO_PREPARE_LOCK:
+                _AUDIO_PREPARE_JOB["current"] = f"Conversion {pos}/{total} — {titre} — {item['track']}"
+            try:
+                _preparer_piste_audio_compatible(video_id, track_index, titre=titre, force=force)
+                item["status"] = "prepared"
+                prepared += 1
+            except Exception as exc:
+                item["status"] = "error"
+                item["error"] = str(exc)[:800]
+                errors += 1
+            with _AUDIO_PREPARE_LOCK:
+                _AUDIO_PREPARE_JOB.update({
+                    "progress": pos, "prepared": prepared, "pending": max(0, total - pos),
+                    "errors": errors, "items": list(items[-300:]),
+                })
+        with _AUDIO_PREPARE_LOCK:
+            _AUDIO_PREPARE_JOB.update({
+                "running": False, "phase": "finished", "current": "",
+                "finished_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            })
+        _journaliser_admin(admin, "Compatibilité audio préparée", {
+            "videos": len(videos), "tracks": tracks_total, "prepared": prepared,
+            "direct_compatible": direct, "errors": errors,
+        })
+    except Exception as exc:
+        with _AUDIO_PREPARE_LOCK:
+            _AUDIO_PREPARE_JOB.update({
+                "running": False, "phase": "error", "error": str(exc),
+                "finished_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            })
+
+
+def _demarrer_preparation_audio(admin: str = "SYSTEM", force: bool = False) -> dict:
+    global _AUDIO_PREPARE_JOB
+    with _AUDIO_PREPARE_LOCK:
+        if _AUDIO_PREPARE_JOB.get("running"):
+            return json.loads(json.dumps(_AUDIO_PREPARE_JOB, ensure_ascii=False))
+        _AUDIO_PREPARE_JOB = {
+            "running": True, "phase": "starting", "progress": 0, "total": 0,
+            "videos": 0, "tracks": 0, "direct_compatible": 0, "prepared": 0,
+            "pending": 0, "errors": 0, "current": "Démarrage…", "items": [],
+            "started_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "finished_at": None, "error": None,
+        }
+        snapshot = json.loads(json.dumps(_AUDIO_PREPARE_JOB, ensure_ascii=False))
+    threading.Thread(target=_executer_preparation_audio, args=(force, admin), daemon=True).start()
+    return snapshot
+
+
+@app.get("/admin/audio-compatibility")
+def statut_audio_compatibility(admin: str = Depends(verifier_admin)):
+    return _audio_job_snapshot()
+
+
+@app.post("/admin/audio-compatibility")
+def lancer_audio_compatibility(force: bool = Query(False), admin: str = Depends(verifier_admin)):
+    job = _demarrer_preparation_audio(admin=admin, force=force)
+    _journaliser_admin(admin, "Préparation audio universelle lancée", {"force": force})
+    return job
+
+
 @app.get("/tracks/{video_id}")
 def get_tracks(video_id: str, utilisateur: dict = Depends(verifier_token)):
     try:
         # Important : cette route ne lance plus l'extraction complète des pistes.
         # Elle répond dès que ffprobe a identifié les langues disponibles.
-        return _probe_media(video_id)
+        media = _probe_media(video_id)
+        return _annoter_pistes_audio(video_id, media)
     except RuntimeError as exc:
         print(f"[DanaTrap] analyse des pistes impossible pour {video_id}: {exc}")
         raise HTTPException(status_code=502, detail=str(exc))
@@ -2253,28 +2703,41 @@ def get_muxed_video(
         # précise. On évite ainsi de relire tout le film depuis le début.
         coarse_seek = max(0.0, start_sec - 3.0)
         fine_seek = max(0.0, start_sec - coarse_seek)
+        cache_entry = _audio_cache_entry(video_id, selected, tracks)
+        compatibility = _audio_compatibility(selected)
+        if not cache_entry and compatibility.get("needs_conversion"):
+            # La première lecture reste immédiate grâce à la conversion à la volée.
+            # En parallèle, DTS prépare une version persistante pour les suivantes.
+            _planifier_piste_audio(video_id, track_index, selected.get("title") or "")
 
+        auth_header = _get_drive_auth_header()
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-headers", _get_drive_auth_header(),
+            "-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err",
         ]
         if coarse_seek > 0:
             cmd += ["-ss", f"{coarse_seek:.3f}"]
-        cmd += ["-i", _get_drive_media_url(video_id)]
+        cmd += ["-headers", auth_header, "-i", _get_drive_media_url(video_id)]
+
+        if cache_entry:
+            if coarse_seek > 0:
+                cmd += ["-ss", f"{coarse_seek:.3f}"]
+            cmd += ["-headers", auth_header, "-i", _get_drive_media_url(str(cache_entry.get("file_id")))]
         if fine_seek > 0:
             cmd += ["-ss", f"{fine_seek:.3f}"]
 
+        cmd += ["-map", f"0:{video_stream_index}"]
+        if cache_entry:
+            cmd += ["-map", "1:a:0", "-c:v", "copy", "-c:a", "copy"]
+        else:
+            cmd += [
+                "-map", f"0:{audio_stream_index}",
+                "-c:v", "copy",
+                *_audio_universal_codec_args(),
+            ]
         cmd += [
-            "-map", f"0:{video_stream_index}",
-            "-map", f"0:{audio_stream_index}",
-            "-c:v", "copy",
-            # On normalise toujours la piste choisie en AAC. Cela corrige les
-            # timestamps irréguliers de certaines pistes AAC/AC3/E-AC3/DTS.
-            "-c:a", "aac", "-b:a", "192k",
-            "-af", "aresample=async=1000:first_pts=0",
             "-sn", "-dn",
             "-map_metadata", "-1",
-            "-fflags", "+genpts",
             "-avoid_negative_ts", "make_zero",
             "-max_muxing_queue_size", "4096",
         ]
@@ -2330,6 +2793,7 @@ def get_muxed_video(
                 "X-Content-Type-Options": "nosniff",
                 "X-Accel-Buffering": "no",
                 "Accept-Ranges": "none",
+                "X-DTS-Audio-Mode": "cache-drive" if cache_entry else "conversion-live",
             },
         )
     except HTTPException:
@@ -2358,23 +2822,22 @@ def get_audio(
 
         selected = audio_tracks[track_index]
         stream_index = selected.get("stream_index")
-        codec = selected.get("codec", "")
         start_sec = max(0.0, float(start or 0.0))
         seek_args = ["-ss", f"{start_sec:.3f}"] if start_sec > 0 else []
+        cache_entry = _audio_cache_entry(video_id, selected, tracks)
+        if not cache_entry and _audio_compatibility(selected).get("needs_conversion"):
+            _planifier_piste_audio(video_id, track_index, selected.get("title") or "")
 
-        # AAC peut être remuxé sans perte. Les autres codecs sont convertis en AAC,
-        # le format le plus compatible avec Chrome, Safari, iOS et Android.
-        if codec == "aac":
-            codec_args = ["-c:a", "copy"]
-        else:
-            codec_args = ["-c:a", "aac", "-b:a", "192k", "-af", "aresample=async=1:first_pts=0"]
-
+        source_id = str(cache_entry.get("file_id")) if cache_entry else video_id
+        map_audio = "0:a:0" if cache_entry else f"0:{stream_index}"
+        codec_args = ["-c:a", "copy"] if cache_entry else _audio_universal_codec_args()
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-headers", _get_drive_auth_header(),
+            "-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err",
             *seek_args,
-            "-i", _get_drive_media_url(video_id),
-            "-map", f"0:{stream_index}",
+            "-headers", _get_drive_auth_header(),
+            "-i", _get_drive_media_url(source_id),
+            "-map", map_audio,
             "-vn", "-sn", "-dn",
             *codec_args,
             "-map_metadata", "-1",
@@ -2423,6 +2886,7 @@ def get_audio(
                 "Cache-Control": "no-store",
                 "Access-Control-Allow-Origin": "*",
                 "X-Content-Type-Options": "nosniff",
+                "X-DTS-Audio-Mode": "cache-drive" if cache_entry else "conversion-live",
             },
         )
     except HTTPException:
