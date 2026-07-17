@@ -26,7 +26,10 @@ import shutil
 import re
 import hashlib
 import unicodedata
+import gzip
+import mimetypes
 from difflib import SequenceMatcher
+from PIL import Image, ImageOps
 
 SCOPES = [
     'https://www.googleapis.com/auth/drive.readonly',
@@ -42,6 +45,22 @@ DEFAULT_MAX_DEVICES = max(1, int(os.environ.get("DEFAULT_MAX_DEVICES", "3")))
 
 TMDB_API_KEY = os.environ.get('TMDB_API_KEY', '')
 cache_tmdb = {}
+
+# ==================== STEP 1 : PERFORMANCES ====================
+CATALOGUE_CACHE_FILENAME = "dts_catalogue_cache.json"
+THUMBNAIL_MAP_FILENAME = "dts_poster_thumbnails.json"
+THUMBNAIL_FOLDER_NAME = "Miniatures DTS"
+THUMBNAIL_WIDTH = max(180, int(os.environ.get("THUMBNAIL_WIDTH", "360")))
+THUMBNAIL_HEIGHT = max(270, int(os.environ.get("THUMBNAIL_HEIGHT", "540")))
+THUMBNAIL_QUALITY = max(55, min(90, int(os.environ.get("THUMBNAIL_QUALITY", "78"))))
+POSTER_CACHE_DIR = pathlib.Path(tempfile.gettempdir()) / "dts_poster_cache"
+POSTER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_POSTER_LOCKS: dict[str, threading.Lock] = {}
+_POSTER_LOCKS_GUARD = threading.Lock()
+_THUMBNAIL_MAP_LOCK = threading.Lock()
+_THUMBNAIL_PERSIST_SEMAPHORE = threading.Semaphore(2)
+_STATIC_GZIP_CACHE: dict[str, tuple[float, bytes]] = {}
+
 
 # ==================== CONNEXION GOOGLE DRIVE ====================
 def _trouver_token_pickle():
@@ -422,6 +441,143 @@ def _sauvegarder_json_drive(nom: str, data: Any) -> str:
     with _GENERIC_JSON_LOCK:
         _GENERIC_JSON_CACHE[nom] = {"cached_at": time.time(), "data": data}
     return str(fichier_id or "")
+
+
+def _charger_cache_catalogue_persistant(force: bool = False) -> Optional[dict]:
+    """Charge le dernier catalogue préconstruit depuis un seul fichier Drive."""
+    try:
+        data = _charger_json_drive(CATALOGUE_CACHE_FILENAME, {}, force)
+        if isinstance(data, dict) and isinstance(data.get("films"), list):
+            return data
+    except Exception as exc:
+        print(f"[DTS] cache catalogue persistant indisponible: {exc}")
+    return None
+
+
+def _sauvegarder_cache_catalogue_persistant(data: dict) -> None:
+    try:
+        _sauvegarder_json_drive(CATALOGUE_CACHE_FILENAME, data)
+    except Exception as exc:
+        print(f"[DTS] sauvegarde du cache catalogue impossible: {exc}")
+
+
+def _etag_json(data: Any) -> tuple[str, bytes]:
+    brut = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return '"' + hashlib.sha256(brut).hexdigest()[:32] + '"', brut
+
+
+def _reponse_json_optimisee(request: Request, data: Any, cache_control: str = "private, max-age=60, stale-while-revalidate=86400") -> Response:
+    etag, brut = _etag_json(data)
+    headers = {"Cache-Control": cache_control, "ETag": etag, "Vary": "Accept-Encoding"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    if "gzip" in request.headers.get("accept-encoding", "").lower() and len(brut) >= 1024:
+        brut = gzip.compress(brut, compresslevel=5)
+        headers["Content-Encoding"] = "gzip"
+    return Response(content=brut, media_type="application/json; charset=utf-8", headers=headers)
+
+
+def _poster_lock(file_id: str) -> threading.Lock:
+    with _POSTER_LOCKS_GUARD:
+        return _POSTER_LOCKS.setdefault(file_id, threading.Lock())
+
+
+def _telecharger_fichier_drive(file_id: str, timeout: int = 30) -> tuple[bytes, str]:
+    reponse = requests.get(
+        f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
+        headers={"Authorization": f"Bearer {get_access_token()}"}, timeout=timeout,
+    )
+    reponse.raise_for_status()
+    return reponse.content, str(reponse.headers.get("Content-Type") or "application/octet-stream").split(";")[0]
+
+
+def _creer_miniature_webp(source: bytes) -> bytes:
+    with Image.open(io.BytesIO(source)) as image:
+        image = ImageOps.exif_transpose(image)
+        image = image.convert("RGB")
+        # Recadrage léger au format affiche 2:3, sans déformation.
+        cible_ratio = THUMBNAIL_WIDTH / THUMBNAIL_HEIGHT
+        ratio = image.width / max(1, image.height)
+        if ratio > cible_ratio:
+            largeur = int(image.height * cible_ratio)
+            gauche = max(0, (image.width - largeur) // 2)
+            image = image.crop((gauche, 0, gauche + largeur, image.height))
+        elif ratio < cible_ratio:
+            hauteur = int(image.width / cible_ratio)
+            haut = max(0, (image.height - hauteur) // 2)
+            image = image.crop((0, haut, image.width, haut + hauteur))
+        image.thumbnail((THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT), Image.Resampling.LANCZOS)
+        sortie = io.BytesIO()
+        image.save(sortie, format="WEBP", quality=THUMBNAIL_QUALITY, method=4, optimize=True)
+        return sortie.getvalue()
+
+
+def _persister_miniature_drive(poster_id: str, contenu: bytes) -> None:
+    """Enregistre la miniature sur Drive pour survivre aux redémarrages Render."""
+    try:
+        with _THUMBNAIL_PERSIST_SEMAPHORE:
+            with _THUMBNAIL_MAP_LOCK:
+                mapping = _charger_json_drive(THUMBNAIL_MAP_FILENAME, {}, force=True)
+                if isinstance(mapping, dict) and mapping.get(poster_id):
+                    return
+                _charger_si_manquant()
+                service = build('drive', 'v3', credentials=CREDENTIALS)
+                racine_id = trouver_dossier_racine(service)
+                if not racine_id:
+                    return
+                dossier_id = _trouver_ou_creer_dossier(service, racine_id, THUMBNAIL_FOLDER_NAME)
+                nom = f"{poster_id}.webp"
+                existant = _trouver_fichier_dans_dossier(service, dossier_id, nom)
+                media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype='image/webp', resumable=False)
+                if existant:
+                    fichier_id = service.files().update(fileId=existant, media_body=media, fields='id').execute().get('id')
+                else:
+                    fichier_id = service.files().create(
+                        body={'name': nom, 'parents': [dossier_id]}, media_body=media, fields='id'
+                    ).execute().get('id')
+                if fichier_id:
+                    mapping = mapping if isinstance(mapping, dict) else {}
+                    mapping[poster_id] = {"file_id": fichier_id, "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z"}
+                    _sauvegarder_json_drive(THUMBNAIL_MAP_FILENAME, mapping)
+    except Exception as exc:
+        print(f"[DTS] miniature Drive non persistée pour {poster_id}: {exc}")
+
+
+def _miniature_poster(poster_id: str) -> tuple[pathlib.Path, str]:
+    nom_sure = re.sub(r'[^A-Za-z0-9_.-]', '_', poster_id)
+    chemin = POSTER_CACHE_DIR / f"{nom_sure}.webp"
+    if chemin.exists() and chemin.stat().st_size > 0:
+        return chemin, "image/webp"
+    with _poster_lock(poster_id):
+        if chemin.exists() and chemin.stat().st_size > 0:
+            return chemin, "image/webp"
+        # Essaie d'abord la miniature déjà persistée sur Google Drive.
+        mapping = _charger_json_drive(THUMBNAIL_MAP_FILENAME, {}, force=False)
+        fiche = mapping.get(poster_id) if isinstance(mapping, dict) else None
+        thumb_id = fiche.get("file_id") if isinstance(fiche, dict) else fiche
+        if thumb_id:
+            try:
+                contenu, _ = _telecharger_fichier_drive(str(thumb_id), timeout=20)
+                if contenu:
+                    chemin.write_bytes(contenu)
+                    return chemin, "image/webp"
+            except Exception as exc:
+                print(f"[DTS] miniature persistée invalide pour {poster_id}: {exc}")
+        source, source_mime = _telecharger_fichier_drive(poster_id, timeout=35)
+        try:
+            contenu = _creer_miniature_webp(source)
+            chemin.write_bytes(contenu)
+            threading.Thread(target=_persister_miniature_drive, args=(poster_id, contenu), daemon=True).start()
+            return chemin, "image/webp"
+        except Exception as exc:
+            # Fallback : l'affiche originale reste visible si Pillow ne sait pas lire un format rare.
+            print(f"[DTS] conversion WebP impossible pour {poster_id}, original utilisé: {exc}")
+            if not source_mime.startswith("image/"):
+                raise
+            extension = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif"}.get(source_mime, ".img")
+            original = POSTER_CACHE_DIR / f"{nom_sure}{extension}"
+            original.write_bytes(source)
+            return original, source_mime
 
 
 def charger_sorties(force: bool = False) -> list[dict]:
@@ -1320,14 +1476,24 @@ def scanner_series(service, series_id, categorie: str = "series", overrides: Opt
 
 _LIBRARY_CACHE: dict[str, Any] = {"cached_at": 0.0, "data": None}
 _LIBRARY_CACHE_LOCK = threading.Lock()
+_LIBRARY_PERSISTENT_DIRTY = False
 
 
 def _scanner_bibliotheque(force: bool = False) -> dict:
+    global _LIBRARY_PERSISTENT_DIRTY
     now = time.time()
     with _LIBRARY_CACHE_LOCK:
         cached = _LIBRARY_CACHE.get("data")
         if not force and isinstance(cached, dict) and now - float(_LIBRARY_CACHE.get("cached_at") or 0) < LIBRARY_CACHE_TTL:
             return cached
+    # Après un redémarrage Render, un seul petit JSON Drive suffit au lieu de rescanner tous les dossiers.
+    if not force and not _LIBRARY_PERSISTENT_DIRTY:
+        persistant = _charger_cache_catalogue_persistant(force=False)
+        if persistant:
+            with _LIBRARY_CACHE_LOCK:
+                _LIBRARY_CACHE["cached_at"] = now
+                _LIBRARY_CACHE["data"] = persistant
+            return persistant
     _charger_si_manquant()
     service = build('drive', 'v3', credentials=CREDENTIALS)
     racine_id = get_id_dossier(service, "Danatrap Stream")
@@ -1343,24 +1509,34 @@ def _scanner_bibliotheque(force: bool = False) -> dict:
         "anime": scanner_series(service, anime_id, "anime", overrides) if anime_id else [],
         "sorties": charger_sorties(),
         "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "cache_version": 2,
     }
     data["collections"] = _construire_collections(data)
     with _LIBRARY_CACHE_LOCK:
         _LIBRARY_CACHE["cached_at"] = now
         _LIBRARY_CACHE["data"] = data
+    _LIBRARY_PERSISTENT_DIRTY = False
+    _sauvegarder_cache_catalogue_persistant(data)
     return data
 
 
 # ==================== ROUTES PROTEGEES ====================
 @app.get("/bibliotheque")
-def get_bibliotheque(utilisateur: dict = Depends(verifier_token)):
-    return _scanner_bibliotheque()
+def get_bibliotheque(request: Request, utilisateur: dict = Depends(verifier_token)):
+    return _reponse_json_optimisee(request, _scanner_bibliotheque())
 
 
 def _invalider_cache_bibliotheque():
+    global _LIBRARY_PERSISTENT_DIRTY
     with _LIBRARY_CACHE_LOCK:
         _LIBRARY_CACHE["cached_at"] = 0.0
         _LIBRARY_CACHE["data"] = None
+    _LIBRARY_PERSISTENT_DIRTY = True
+    # Empêche un ancien catalogue d'être repris après un redémarrage juste après une modification admin.
+    try:
+        _sauvegarder_json_drive(CATALOGUE_CACHE_FILENAME, {})
+    except Exception as exc:
+        print(f"[DTS] invalidation du cache catalogue Drive impossible: {exc}")
 
 
 @app.post("/admin/rafraichir-bibliotheque")
@@ -1697,6 +1873,39 @@ def dashboard_admin(admin: str = Depends(verifier_admin)):
         "termines": sum(1 for c in ("films", "series", "anime") for i in bibliotheque.get(c, []) if i.get("statut") == "Terminé"),
         "abandonnes": sum(1 for c in ("films", "series", "anime") for i in bibliotheque.get(c, []) if i.get("statut") == "Abandonné"),
     }
+
+
+@app.get("/poster/{poster_id}")
+def poster_optimise(
+    poster_id: str,
+    request: Request,
+    token: Optional[str] = Query(None),
+):
+    token_final = token
+    if not token_final:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            token_final = auth_header[7:]
+    if not token_final:
+        raise HTTPException(status_code=401, detail="Token manquant")
+    try:
+        jwt.decode(token_final, CLE_SECRETE_JWT, algorithms=[ALGORITHME])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalide ou expiré")
+    try:
+        chemin, media_type = _miniature_poster(poster_id)
+    except Exception as exc:
+        print(f"[DTS] miniature impossible pour {poster_id}: {exc}")
+        raise HTTPException(status_code=502, detail="Affiche temporairement indisponible")
+    etag = '"poster-' + hashlib.sha1((poster_id + str(chemin.stat().st_size)).encode()).hexdigest()[:24] + '"'
+    headers = {
+        "Cache-Control": "private, max-age=604800, stale-while-revalidate=2592000",
+        "ETag": etag,
+        "X-Content-Type-Options": "nosniff",
+    }
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(str(chemin), media_type=media_type, headers=headers)
 
 
 @app.get("/stream/{video_id}")
@@ -2229,28 +2438,41 @@ def get_audio(
 _FRONTEND_DIR = (pathlib.Path(__file__).parent.parent / "frontend").resolve()
 if (_FRONTEND_DIR / "index.html").exists():
     ROUTES_PROTEGEES = {
-        "login", "bibliotheque", "stream", "tracks", "mux", "audio", "subtitle", "admin", "api",
+        "login", "bibliotheque", "stream", "poster", "tracks", "mux", "audio", "subtitle", "admin", "api",
         "favicon.ico", "token.pickle", "credentials.json",
         "utilisateurs.json", "static",
     }
     EXTENSIONS_BLOQUEES = {".py", ".json", ".pickle", ".log", ".env", ".txt"}
+    EXTENSIONS_COMPRESSIBLES = {".html", ".css", ".js", ".svg", ".webmanifest"}
+
+    def _servir_fichier_statique(fichier: pathlib.Path, request: Request, media_type: str, cache_control: str) -> Response:
+        headers = {"Cache-Control": cache_control, "Vary": "Accept-Encoding"}
+        ext = fichier.suffix.lower()
+        if ext in EXTENSIONS_COMPRESSIBLES and "gzip" in request.headers.get("accept-encoding", "").lower():
+            mtime = fichier.stat().st_mtime
+            cle = str(fichier)
+            cache = _STATIC_GZIP_CACHE.get(cle)
+            if not cache or cache[0] != mtime:
+                cache = (mtime, gzip.compress(fichier.read_bytes(), compresslevel=5))
+                _STATIC_GZIP_CACHE[cle] = cache
+            headers["Content-Encoding"] = "gzip"
+            return Response(content=cache[1], media_type=media_type, headers=headers)
+        return FileResponse(str(fichier), media_type=media_type, headers=headers)
 
     @app.get("/", include_in_schema=False)
-    def _serve_index():
-        resp = FileResponse(str(_FRONTEND_DIR / "index.html"), media_type="text/html")
-        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-        resp.headers["Pragma"] = "no-cache"
-        resp.headers["Expires"] = "0"
-        return resp
+    def _serve_index(request: Request):
+        # no-cache autorise la réutilisation avec validation, contrairement à no-store qui retélécharge tout.
+        return _servir_fichier_statique(
+            _FRONTEND_DIR / "index.html", request, "text/html; charset=utf-8", "no-cache, must-revalidate"
+        )
 
     @app.get("/{filename:path}", include_in_schema=False)
-    def _serve_static(filename: str):
+    def _serve_static(filename: str, request: Request):
         if ".." in filename or filename.startswith("/") or "\\" in filename:
             raise HTTPException(status_code=400, detail="Chemin invalide")
         premier = filename.split("/")[0].lower()
         if premier in ROUTES_PROTEGEES:
             raise HTTPException(status_code=404, detail="Route inconnue")
-        import mimetypes
         ext = os.path.splitext(filename)[1].lower()
         if ext in EXTENSIONS_BLOQUEES:
             raise HTTPException(status_code=403, detail="Type de fichier interdit")
@@ -2258,9 +2480,12 @@ if (_FRONTEND_DIR / "index.html").exists():
         if not fichier.is_file():
             raise HTTPException(status_code=404, detail="Fichier introuvable")
         mime, _ = mimetypes.guess_type(str(fichier))
-        if mime is None:
-            mime = "application/octet-stream"
-        return FileResponse(str(fichier), media_type=mime)
+        mime = mime or "application/octet-stream"
+        if ext in {".png", ".jpg", ".jpeg", ".webp", ".avif", ".ico"}:
+            cache_control = "public, max-age=2592000, stale-while-revalidate=2592000"
+        else:
+            cache_control = "public, max-age=604800, stale-while-revalidate=86400"
+        return _servir_fichier_statique(fichier, request, mime, cache_control)
     print(f"Frontend servi depuis {_FRONTEND_DIR}")
 else:
     print(f"ATTENTION: dossier frontend introuvable a {_FRONTEND_DIR}")

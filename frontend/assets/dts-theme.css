@@ -475,3 +475,13 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 @media(max-width:650px){.dts-create-grid,.dts-release-admin-form{grid-template-columns:1fr}.dts-create-grid .wide,.dts-release-admin-form .wide,.dts-release-admin-form button{grid-column:auto}.dts-admin-release-list article{grid-template-columns:1fr}.dts-admin-release-list article button{width:100%}.dts-history-actions{grid-template-columns:1fr}.dts-collection-card,.dts-collection-card>div{width:145px}.dts-collection-card{flex-basis:145px}.dts-collection-card>div{height:218px}.dts-subtitle-panel>label{align-items:flex-start;flex-wrap:wrap}.dts-player-top-actions .dts-player-icon-text:nth-child(n+4){display:none}}
 
 .dts-history-clear-zone{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}.dts-history-clear-zone>span{font:700 13px 'Barlow Condensed',sans-serif;letter-spacing:1.4px;text-transform:uppercase;color:#ff91ac}@media(max-width:720px){.dts-history-clear-zone{justify-content:flex-start;width:100%}}
+
+/* DTS v6.1 — STEP 1 performances */
+.dts-catalog-sync{
+  position:fixed;top:76px;right:22px;z-index:70;display:flex;align-items:center;gap:9px;
+  padding:9px 13px;border:1px solid rgba(118,87,255,.34);border-radius:999px;
+  background:rgba(10,13,20,.88);backdrop-filter:blur(12px);box-shadow:0 8px 28px rgba(0,0,0,.28);
+  color:#C9C2FF;font-size:12px;font-weight:700;letter-spacing:.35px;
+}
+.dts-catalog-sync span{width:11px;height:11px;border-radius:50%;border:2px solid rgba(201,194,255,.25);border-top-color:#AFA2FF;animation:spin .8s linear infinite}
+@media(max-width:768px){.dts-catalog-sync{top:auto;bottom:76px;right:12px;font-size:11px;padding:8px 11px}}

@@ -13,7 +13,6 @@
 <script src="./react.production.min.js"></script>
 <script src="./react-dom.production.min.js"></script>
 <script src="./support.js"></script>
-<script async src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
 </head>
 <body>
 <x-dc>
@@ -169,6 +168,9 @@ input { outline: none; }
           <button class="dts-logout" onClick="{{ doLogout }}" style="background:transparent;border:1px solid #273042;border-radius:7px;padding:7px 13px;font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:14px;letter-spacing:1.7px;color:#9DA4B3;text-transform:uppercase;cursor:pointer">Déconnexion</button>
         </div>
       </div>
+      <sc-if value="{{ catalogSyncing }}" hint-placeholder-val="{{ false }}">
+        <div class="dts-catalog-sync"><span></span>Synchronisation du catalogue…</div>
+      </sc-if>
 
       <sc-if value="{{ libError }}" hint-placeholder-val="{{ false }}">
         <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:80px 40px">
@@ -857,7 +859,7 @@ class Component extends DCLogic {
     pseudo: '', password: '', loginError: '', loggingIn: false, rememberMe: false, rowNav: {}, history: [], confirmClear: false, myList: [], heroIdx: 0, searchQuery: '', libTab: 'accueil', catType: 'tous', catGenre: 'Tous les genres', catYear: 'Toutes les années', catLanguage: 'Toutes les langues', catSort: 'recent',
     shortcutsHelpOpen: false, shortcutsSeen: false, castAvailable: false, castBusy: false, airplayAvailable: false, pipActive: false,
     token: null, userPseudo: '',
-    library: null, libLoading: false, libError: '',
+    library: null, libLoading: false, libError: '', catalogSyncing: false, catalogFromCache: false,
     posters: {},
     show: null, showKind: '',
     playingTitle: '', videoUrl: null, videoLoading: false, videoError: '',
@@ -1316,9 +1318,34 @@ class Component extends DCLogic {
     });
   }
 
-  _posterStarted = {};
-  _posterQueue = [];
-  _posterActive = 0;
+  _catalogCacheKey() { return 'dts_catalogue_cache_v2'; }
+
+  _readCatalogCache() {
+    try {
+      const raw = localStorage.getItem(this._catalogCacheKey());
+      const cached = raw ? JSON.parse(raw) : null;
+      if (cached && cached.data && Array.isArray(cached.data.films) && Array.isArray(cached.data.series) && Array.isArray(cached.data.anime)) return cached;
+    } catch (e) {}
+    return null;
+  }
+
+  _writeCatalogCache(data, etag) {
+    try {
+      localStorage.setItem(this._catalogCacheKey(), JSON.stringify({ data: data, etag: etag || '', savedAt: Date.now() }));
+    } catch (e) {
+      // Le catalogue reste utilisable même si le stockage du navigateur est plein ou désactivé.
+    }
+  }
+
+  _securePosterUrl(posterId) {
+    if (!posterId || !this.state.token) return null;
+    return this.api + '/poster/' + encodeURIComponent(posterId) + '?token=' + encodeURIComponent(this.state.token);
+  }
+
+  _posterUrl(item, fallbackPosterId) {
+    item = item || {};
+    return item.poster_url || item.poster_tmdb_url || this._securePosterUrl(item.poster_id || fallbackPosterId) || null;
+  }
 
   authFetch(path, opts) {
     return fetch(this.api + path, Object.assign({}, opts, {
@@ -1402,9 +1429,11 @@ class Component extends DCLogic {
 
   componentDidMount() {
     if (typeof document !== 'undefined') { document.addEventListener('visibilitychange', this._handleVisibilityChange); document.addEventListener('keydown', this._handleGlobalKeyDown); }
-    this._initCastSupport();
-    if (typeof window !== 'undefined') window.__onGCastApiAvailable = (available) => { if (available) this._initCastSupport(); };
-    if (typeof window !== 'undefined') window.addEventListener('beforeunload', this._handleBeforeUnload);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', this._handleBeforeUnload);
+      const chromeLike = !!window.chrome && !/firefox/i.test(String(navigator.userAgent || ''));
+      if (chromeLike) this.setState({ castAvailable: true });
+    }
     try {
       const token = localStorage.getItem('danatrap_token');
       if (token) {
@@ -1465,16 +1494,38 @@ class Component extends DCLogic {
 
   _initCastSupport = () => {
     try {
-      if (!window.cast || !window.cast.framework || !window.chrome || !chrome.cast) return;
+      if (!window.cast || !window.cast.framework || !window.chrome || !chrome.cast) return false;
       cast.framework.CastContext.getInstance().setOptions({receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED});
       this.setState({castAvailable:true});
-    } catch(e) { console.warn('[DTS] Cast indisponible',e); }
+      return true;
+    } catch(e) { console.warn('[DTS] Cast indisponible',e); return false; }
   };
+
+  _loadCastSdk = () => {
+    if (this._initCastSupport()) return Promise.resolve(true);
+    if (this._castSdkPromise) return this._castSdkPromise;
+    this._castSdkPromise = new Promise((resolve, reject) => {
+      let finished = false;
+      const done = (ok) => { if (finished) return; finished = true; ok ? resolve(true) : reject(new Error('SDK Chromecast indisponible')); };
+      window.__onGCastApiAvailable = (available) => { if (available && this._initCastSupport()) done(true); else done(false); };
+      const script = document.createElement('script');
+      script.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+      script.async = true;
+      script.onerror = () => done(false);
+      document.head.appendChild(script);
+      setTimeout(() => { if (this._initCastSupport()) done(true); else done(false); }, 8000);
+    }).catch(e => { this._castSdkPromise = null; throw e; });
+    return this._castSdkPromise;
+  };
+
   castCurrentVideo = async () => {
     if(!this.state.videoUrl) return;
-    if(!this.state.castAvailable) { this.toast('Aucun appareil Chromecast détecté ou navigateur incompatible.',false); return; }
     this.setState({castBusy:true});
     try {
+      if (!this._initCastSupport()) {
+        this.toast('Chargement de Chromecast…', true);
+        await this._loadCastSdk();
+      }
       const context=cast.framework.CastContext.getInstance();
       let session=context.getCurrentSession();
       if(!session) { await context.requestSession(); session=context.getCurrentSession(); }
@@ -1555,47 +1606,39 @@ class Component extends DCLogic {
   };
 
   loadLibrary = async () => {
-    this.setState({ libLoading: true, libError: '' });
+    const cached = this._readCatalogCache();
+    const canShowCache = !!(cached && cached.data);
+    if (canShowCache && !this.state.library) {
+      this.setState({ library: cached.data, libLoading: false, libError: '', catalogSyncing: true, catalogFromCache: true, heroIdx: 0 }, () => this._startHeroTimer());
+    } else {
+      this.setState({ libLoading: !this.state.library, libError: '', catalogSyncing: true });
+    }
     try {
-      const res = await this.authFetch('/bibliotheque');
+      const headers = {};
+      if (cached && cached.etag) headers['If-None-Match'] = cached.etag;
+      const res = await this.authFetch('/bibliotheque', { headers: headers });
       if (res.status === 401) return this.sessionExpired();
-      if (!res.ok) { this.setState({ libLoading: false, libError: 'Impossible de charger la bibliothèque (' + res.status + ').' }); return; }
+      if (res.status === 304 && cached && cached.data) {
+        this.setState({ libLoading: false, catalogSyncing: false, catalogFromCache: false, library: cached.data }, () => this._startHeroTimer());
+        return;
+      }
+      if (!res.ok) {
+        if (canShowCache || this.state.library) {
+          this.setState({ libLoading: false, catalogSyncing: false });
+          return;
+        }
+        this.setState({ libLoading: false, catalogSyncing: false, libError: 'Impossible de charger la bibliothèque (' + res.status + ').' });
+        return;
+      }
       const lib = await res.json();
-      this.setState({ libLoading: false, library: lib, heroIdx: 0 }, () => { this.queueAllPosters(lib); this._startHeroTimer(); });
+      const etag = res.headers.get('ETag') || '';
+      this._writeCatalogCache(lib, etag);
+      this.setState({ libLoading: false, catalogSyncing: false, catalogFromCache: false, library: lib, heroIdx: 0 }, () => this._startHeroTimer());
     } catch (e) {
-      this.setState({ libLoading: false, libError: 'Impossible de charger la bibliothèque. Vérifie ta connexion.' });
+      if (canShowCache || this.state.library) this.setState({ libLoading: false, catalogSyncing: false });
+      else this.setState({ libLoading: false, catalogSyncing: false, libError: 'Impossible de charger la bibliothèque. Vérifie ta connexion.' });
     }
   };
-
-  queueAllPosters(lib) {
-    const all = [].concat(lib.films || [], lib.series || [], lib.anime || []);
-    all.forEach(it => this.loadPoster(it.poster_id));
-  }
-
-  loadPoster(pid) {
-    if (!pid || this._posterStarted[pid]) return;
-    this._posterStarted[pid] = true;
-    this._posterQueue.push(pid);
-    this._pumpPosters();
-  }
-
-  _pumpPosters() {
-    while (this._posterActive < 4 && this._posterQueue.length) {
-      const pid = this._posterQueue.shift();
-      this._posterActive++;
-      this.authFetch('/stream/' + pid)
-        .then(r => (r.ok ? r.blob() : null))
-        .then(b => {
-          this._posterActive--;
-          if (b) {
-            const url = URL.createObjectURL(b);
-            this.setState(s => ({ posters: Object.assign({}, s.posters, { [pid]: url }) }));
-          }
-          this._pumpPosters();
-        })
-        .catch(() => { this._posterActive--; this._pumpPosters(); });
-    }
-  }
 
   _recordHistory(entry) {
     this.setState(s => {
@@ -1661,7 +1704,6 @@ class Component extends DCLogic {
     this._abortVideo();
     this._clearSaved();
     this.setState({ view: 'login', playerSetupOpen: false, setupLoading: false, token: null, userPseudo: '', library: null, posters: {}, password: '', loginError: '', estAdmin: false, users: null, history: [], myList: [], dashboard: null, newUserPseudo: '', newUserPassword: '', newUserExpires: '', newUserMaxDevices: '3', confirmPseudo: '' });
-    this._posterStarted = {}; this._posterQueue = []; this._posterActive = 0;
   };
   retryLibrary = () => this.loadLibrary();
 
@@ -2429,9 +2471,13 @@ class Component extends DCLogic {
     return h > 0 ? h + ':' + String(m).padStart(2, '0') + ':' + ss : m + ':' + ss;
   }
 
-  _posterEl(url, alt) {
+  _posterEl(url, alt, eager) {
     if (!url) return null;
-    return React.createElement('img', { src: url, alt: alt || '', style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' } });
+    return React.createElement('img', {
+      src: url, alt: alt || '', loading: eager ? 'eager' : 'lazy', decoding: 'async',
+      fetchPriority: eager ? 'high' : 'auto',
+      style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }
+    });
   }
 
   // ---- row scroll arrows ----
@@ -2553,7 +2599,7 @@ class Component extends DCLogic {
   }
 
   _mapItem(it, kind) {
-      const url = it.poster_url || this.state.posters[it.poster_id] || it.poster_tmdb_url || null;
+      const url = this._posterUrl(it);
       const duree = it.duree || it.duree_drive || it.duration || null;
       const annee = it.date_sortie || it.annee || it.date || it.year || null;
       const note = it.note != null ? it.note : (it.rating != null ? it.rating : null);
@@ -2658,7 +2704,7 @@ class Component extends DCLogic {
       const duration = Number(progress && typeof progress === 'object' ? progress.duration : 0) || 0;
       const updatedAt = Number(progress && typeof progress === 'object' ? progress.updatedAt : 0) || 0;
       if (time < 20 || (duration > 0 && time / duration >= .95)) return null;
-      const url = (entry.raw && entry.raw.poster_url) || s.posters[entry.poster_id] || (entry.raw && entry.raw.poster_tmdb_url) || null;
+      const url = this._posterUrl(entry.raw, entry.poster_id);
       const pct = duration > 0 ? Math.min(100, Math.max(2, time / duration * 100)) : 12;
       return Object.assign({
         titre: entry.titre, posterUrl: url, posterEl: this._posterEl(url, entry.titre), isFilm: entry.kind === 'film',
@@ -2686,7 +2732,7 @@ class Component extends DCLogic {
     const historyPageItems = s.history.map(h => {
       const match=videoEntries.find(v=>v.video_id===h.video_id); const raw=match&&match.raw;
       const progress=progressMap[String(h.video_id)]||{}; const time=Number(progress.time||0), duration=Number(progress.duration||0);
-      const url=(raw&&raw.poster_url)||s.posters[h.poster_id]||(raw&&raw.poster_tmdb_url)||null;
+      const url=this._posterUrl(raw,h.poster_id);
       return {title:h.titre,type:h.type,dateLabel:new Date(h.timestamp||Date.now()).toLocaleString('fr-FR'),posterEl:this._posterEl(url,h.titre),progressLabel:h.watched?'Vu':(time>=20?'Reprendre à '+this._fmt(time):'Commencer'),progressPct:duration>0?Math.min(100,time/duration*100).toFixed(1)+'%':'0%',watched:!!h.watched,open:()=>{const e=match||{video_id:h.video_id,titre:h.titre,poster_id:h.poster_id,type:h.type,kind:h.type==='Film'?'film':h.type==='Anime'?'anime':'series',raw:raw,epPos:match&&match.epPos};this._openVideoEntry(e);},remove:()=>this.removeHistoryItem(h.video_id),mark:()=>this.markHistoryWatched(h.video_id)};
     });
     const releaseItems=(lib.sorties||s.plannedReleases||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(r=>({title:r.titre,description:r.description||'',hasDescription:!!r.description,dateLabel:(()=>{try{return new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});}catch(e){return r.date;}})(),category:r.categorie||'Sortie DTS'}));
@@ -2702,7 +2748,7 @@ class Component extends DCLogic {
       { label: 'Votre historique', accent: '#7657FF', glow: 'rgba(118,87,255,0.3)', isHistory: true, count: String(s.history.length), items: s.history.map(h => {
         const historyMatch = videoEntries.find(v => v.video_id === h.video_id);
         const historyRaw = historyMatch && historyMatch.raw;
-        const url = (historyRaw && historyRaw.poster_url) || s.posters[h.poster_id] || (historyRaw && historyRaw.poster_tmdb_url) || null;
+        const url = this._posterUrl(historyRaw, h.poster_id);
         const noop = (e) => { e.stopPropagation(); };
         return Object.assign({
           titre: h.titre, posterUrl: url, posterEl: this._posterEl(url, h.titre),
@@ -2721,7 +2767,7 @@ class Component extends DCLogic {
         })));
       }) },
       { label: 'Ma Liste', accent: '#E82967', glow: 'rgba(232,41,103,0.35)', count: String(s.myList.length), items: s.myList.map(m => {
-        const url = (m.raw && m.raw.poster_url) || s.posters[m.poster_id] || (m.raw && m.raw.poster_tmdb_url) || null;
+        const url = this._posterUrl(m.raw, m.poster_id);
         const noop = (e) => { e.stopPropagation(); };
         return Object.assign({
           titre: m.titre, posterUrl: url, posterEl: this._posterEl(url, m.titre),
@@ -2785,7 +2831,7 @@ class Component extends DCLogic {
     ).sort((a,b) => String(a.it.titre || '').localeCompare(String(b.it.titre || ''), 'fr'));
     const adminCatalogItems = adminPool.map(p => {
       const it = p.it;
-      const posterUrl = it.poster_url || s.posters[it.poster_id] || it.poster_tmdb_url || null;
+      const posterUrl = this._posterUrl(it);
       const kindLabel = p.kind === 'film' ? 'Film' : (p.kind === 'anime' ? 'Anime' : 'Série');
       const hasDescription = !!String(it.synopsis || '').trim();
       return {
@@ -2852,10 +2898,10 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v6.0-control-center',
+      appVersion: 'v6.1-step1-performance',
 
       userPseudo: s.userPseudo,
-      libLoading: s.libLoading, libError: s.libError,
+      libLoading: s.libLoading, libError: s.libError, catalogSyncing: s.catalogSyncing,
       libReady: !!s.library && !s.libLoading && !s.libError,
       retryLibrary: this.retryLibrary,
       sections: sections,
@@ -2928,7 +2974,7 @@ class Component extends DCLogic {
           accent: p.kind === 'series' ? '#7657FF' : '#E82967',
           opacity: active ? 1 : 0,
           pe: active ? 'auto' : 'none',
-          bgEl: (p.it.backdrop_url || base.posterUrl) ? React.createElement('img', { src: p.it.backdrop_url || base.posterUrl, alt: base.titre, style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%' } }) : null,
+          bgEl: (p.it.backdrop_url || base.posterUrl) ? React.createElement('img', { src: p.it.backdrop_url || base.posterUrl, alt: base.titre, loading: 'eager', decoding: 'async', fetchPriority: active ? 'high' : 'low', style: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center 20%' } }) : null,
           playLabel: p.kind === 'film' ? 'Voir le film' : 'Voir la série',
           play: base.open,
           infoOn: true,
@@ -2955,8 +3001,8 @@ class Component extends DCLogic {
       detailTitle: show ? show.titre : '',
       detailKind: s.showKind === 'film' ? 'Film' : (s.showKind === 'anime' ? 'Anime' : 'Série'),
       detailAccent: s.showKind === 'anime' ? '#E82967' : '#7657FF',
-      detailPosterUrl: show ? (show.poster_url || s.posters[show.poster_id] || show.poster_tmdb_url || null) : null,
-      detailPosterEl: show ? this._posterEl(show.poster_url || s.posters[show.poster_id] || show.poster_tmdb_url || null, show.titre) : null,
+      detailPosterUrl: show ? this._posterUrl(show) : null,
+      detailPosterEl: show ? this._posterEl(this._posterUrl(show), show.titre) : null,
       detailSynopsis: show ? (show.synopsis || '') : '', detailHasSynopsis: !!(show && show.synopsis),
       detailGenres: show && Array.isArray(show.genres) ? show.genres : [], detailHasGenres: !!(show && show.genres && show.genres.length),
       detailActors: show && Array.isArray(show.acteurs) ? show.acteurs.join(', ') : '', detailHasActors: !!(show && show.acteurs && show.acteurs.length),
