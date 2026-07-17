@@ -13,6 +13,7 @@
 <script src="./react.production.min.js"></script>
 <script src="./react-dom.production.min.js"></script>
 <script src="./support.js"></script>
+<script async src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
 </head>
 <body>
 <x-dc>
@@ -141,6 +142,9 @@ input { outline: none; }
             <button onClick="{{ goSeries }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabSeriesBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabSeriesColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Séries</button>
             <button onClick="{{ goAnime }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabAnimeBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabAnimeColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Anime</button>
             <button onClick="{{ goCatalogue }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabCatalogueBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabCatalogueColor }};text-transform:uppercase;cursor:pointer;transition:color 0.15s, border-color 0.15s">Catalogue</button>
+            <button onClick="{{ goHistory }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabHistoryBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabHistoryColor }};text-transform:uppercase;cursor:pointer">Historique</button>
+            <button onClick="{{ goReleases }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabReleasesBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabReleasesColor }};text-transform:uppercase;cursor:pointer">Sorties</button>
+            <button onClick="{{ goCollections }}" style="background:transparent;border:none;border-bottom:2px solid {{ tabCollectionsBorder }};padding:8px 11px 6px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:2px;color:{{ tabCollectionsColor }};text-transform:uppercase;cursor:pointer">Sagas</button>
           </div>
         </div>
         <div class="dts-header-actions">
@@ -149,6 +153,13 @@ input { outline: none; }
             <input type="text" value="{{ searchQuery }}" onChange="{{ onSearch }}" placeholder="Rechercher un titre…" style="width:240px;background:#10141D;border:1px solid #273042;border-radius:9px;padding:9px 34px 9px 36px;font-size:14px;color:#F5F5F7;font-family:'Barlow',sans-serif;transition:border-color 0.15s, box-shadow 0.15s, width 0.2s" style-focus="border-color:#7657FF;box-shadow:0 0 0 1px #7657FF, 0 0 14px rgba(118,87,255,0.2);width:300px"></input>
             <sc-if value="{{ hasSearch }}" hint-placeholder-val="{{ false }}">
               <button onClick="{{ clearSearch }}" aria-label="Effacer la recherche" style="position:absolute;right:8px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,0.08);color:#9DA4B3;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</button>
+            </sc-if>
+            <sc-if value="{{ hasSearchSuggestions }}" hint-placeholder-val="{{ false }}">
+              <div class="dts-search-suggestions">
+                <sc-for list="{{ searchSuggestions }}" as="suggestion" hint-placeholder-count="4">
+                  <button onClick="{{ suggestion.choose }}"><strong>{{ suggestion.title }}</strong><span>{{ suggestion.kind }}</span></button>
+                </sc-for>
+              </div>
             </sc-if>
           </div>
           <sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ false }}">
@@ -273,7 +284,7 @@ input { outline: none; }
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
                         <div style="position:absolute;inset:0">{{ item.posterEl }}</div>
                       </sc-if>
-                      <sc-if value="{{ item.hasBadge2 }}" hint-placeholder-val="{{ false }}"><div class="dts-card-badge2" style="background:{{ item.badge2Bg }}">{{ item.badge2 }}</div></sc-if>
+                      <sc-if value="{{ item.hasBadge2 }}" hint-placeholder-val="{{ false }}"><div class="dts-card-badge2" style="background:{{ item.badge2Bg }}">{{ item.badge2 }}</div></sc-if><sc-if value="{{ item.hasStatus }}" hint-placeholder-val="{{ false }}"><div class="dts-card-status" style="border-color:{{ item.statusColor }};color:{{ item.statusColor }}">{{ item.statusLabel }}</div></sc-if>
                       <sc-if value="{{ item.hasProgress }}" hint-placeholder-val="{{ false }}"><div class="dts-card-progress"><div style="width:{{ item.progressPct }}"></div><span>Reprendre à {{ item.resumeText }}</span></div></sc-if>
                       <div class="pinfo" style="position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:6px;padding:44px 12px 12px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, rgba(13,11,20,0.88) 34%, rgba(13,11,20,0.97) 100%)">
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -367,7 +378,7 @@ input { outline: none; }
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
                         <div style="position:absolute;inset:0">{{ item.posterEl }}</div>
                       </sc-if>
-                      <sc-if value="{{ item.hasBadge2 }}" hint-placeholder-val="{{ false }}"><div class="dts-card-badge2" style="background:{{ item.badge2Bg }}">{{ item.badge2 }}</div></sc-if>
+                      <sc-if value="{{ item.hasBadge2 }}" hint-placeholder-val="{{ false }}"><div class="dts-card-badge2" style="background:{{ item.badge2Bg }}">{{ item.badge2 }}</div></sc-if><sc-if value="{{ item.hasStatus }}" hint-placeholder-val="{{ false }}"><div class="dts-card-status" style="border-color:{{ item.statusColor }};color:{{ item.statusColor }}">{{ item.statusLabel }}</div></sc-if>
                       <sc-if value="{{ item.hasProgress }}" hint-placeholder-val="{{ false }}"><div class="dts-card-progress"><div style="width:{{ item.progressPct }}"></div><span>Reprendre à {{ item.resumeText }}</span></div></sc-if>
                       <div class="pinfo" style="position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:6px;padding:44px 12px 12px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, rgba(13,11,20,0.88) 34%, rgba(13,11,20,0.97) 100%)">
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -418,7 +429,7 @@ input { outline: none; }
                       <sc-if value="{{ item.posterUrl }}" hint-placeholder-val="{{ false }}">
                         <div style="position:absolute;inset:0">{{ item.posterEl }}</div>
                       </sc-if>
-                      <sc-if value="{{ item.hasBadge2 }}" hint-placeholder-val="{{ false }}"><div class="dts-card-badge2" style="background:{{ item.badge2Bg }}">{{ item.badge2 }}</div></sc-if>
+                      <sc-if value="{{ item.hasBadge2 }}" hint-placeholder-val="{{ false }}"><div class="dts-card-badge2" style="background:{{ item.badge2Bg }}">{{ item.badge2 }}</div></sc-if><sc-if value="{{ item.hasStatus }}" hint-placeholder-val="{{ false }}"><div class="dts-card-status" style="border-color:{{ item.statusColor }};color:{{ item.statusColor }}">{{ item.statusLabel }}</div></sc-if>
                       <sc-if value="{{ item.hasProgress }}" hint-placeholder-val="{{ false }}"><div class="dts-card-progress"><div style="width:{{ item.progressPct }}"></div><span>Reprendre à {{ item.resumeText }}</span></div></sc-if>
                       <div class="pinfo" style="position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:6px;padding:44px 12px 12px;background:linear-gradient(180deg, rgba(13,11,20,0) 0%, rgba(13,11,20,0.88) 34%, rgba(13,11,20,0.97) 100%)">
                         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -449,6 +460,40 @@ input { outline: none; }
           </div>
         </sc-if>
       </sc-if>
+      <sc-if value="{{ showHistoryPage }}" hint-placeholder-val="{{ false }}">
+        <main class="dts-special-page dts-page-enter">
+          <div class="dts-special-head"><div><div class="dts-kicker">VOTRE ACTIVITÉ</div><h1>Historique de visionnage</h1><p>Reprenez une vidéo, marquez-la comme vue ou retirez-la de votre historique.</p></div><div class="dts-history-clear-zone"><sc-if value="{{ notConfirmingClear }}" hint-placeholder-val="{{ false }}"><button onClick="{{ askClearHistory }}" class="dts-outline-btn danger-outline">Tout effacer</button></sc-if><sc-if value="{{ confirmingClear }}" hint-placeholder-val="{{ false }}"><span>Confirmer ?</span><button onClick="{{ confirmClearHistory }}" class="dts-outline-btn danger-outline">Oui</button><button onClick="{{ cancelClearHistory }}" class="dts-outline-btn">Annuler</button></sc-if></div></div>
+          <sc-if value="{{ hasHistoryPageItems }}" hint-placeholder-val="{{ false }}">
+            <div class="dts-history-list">
+              <sc-for list="{{ historyPageItems }}" as="item" hint-placeholder-count="4">
+                <article class="dts-history-item">
+                  <button onClick="{{ item.open }}" class="dts-history-poster">{{ item.posterEl }}<span>▶</span></button>
+                  <div class="dts-history-copy"><div class="dts-history-top"><span>{{ item.type }}</span><small>{{ item.dateLabel }}</small></div><h2>{{ item.title }}</h2><div class="dts-history-progress"><i style="width:{{ item.progressPct }}"></i></div><strong>{{ item.progressLabel }}</strong></div>
+                  <div class="dts-history-actions"><button onClick="{{ item.open }}" class="dts-primary-btn">{{ item.resumeAction }}</button><button onClick="{{ item.mark }}" class="dts-outline-btn">{{ item.markLabel }}</button><button onClick="{{ item.remove }}" class="dts-outline-btn danger-outline">Retirer</button></div>
+                </article>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ noHistoryPageItems }}" hint-placeholder-val="{{ false }}"><div class="dts-empty-state"><strong>Aucun historique</strong><span>Les contenus que vous regarderez apparaîtront ici.</span><button onClick="{{ goAccueil }}" class="dts-primary-btn">Découvrir le catalogue</button></div></sc-if>
+        </main>
+      </sc-if>
+
+      <sc-if value="{{ showReleasesPage }}" hint-placeholder-val="{{ false }}">
+        <main class="dts-special-page dts-page-enter">
+          <div class="dts-special-head"><div><div class="dts-kicker gold">CALENDRIER DTS</div><h1>Prochaines sorties</h1><p>Films, nouvelles séries et épisodes annoncés par l’administrateur.</p></div></div>
+          <sc-if value="{{ hasReleaseItems }}" hint-placeholder-val="{{ false }}"><div class="dts-release-grid"><sc-for list="{{ releaseItems }}" as="release" hint-placeholder-count="4"><article class="dts-release-card"><time>{{ release.dateLabel }}</time><span>{{ release.category }}</span><h2>{{ release.title }}</h2><sc-if value="{{ release.hasDescription }}" hint-placeholder-val="{{ false }}"><p>{{ release.description }}</p></sc-if></article></sc-for></div></sc-if>
+          <sc-if value="{{ noReleaseItems }}" hint-placeholder-val="{{ false }}"><div class="dts-empty-state"><strong>Aucune sortie annoncée</strong><span>Le calendrier sera mis à jour prochainement.</span></div></sc-if>
+        </main>
+      </sc-if>
+
+      <sc-if value="{{ showCollectionsPage }}" hint-placeholder-val="{{ false }}">
+        <main class="dts-special-page dts-page-enter">
+          <div class="dts-special-head"><div><div class="dts-kicker cyan">ORDRE CHRONOLOGIQUE</div><h1>Sagas et collections</h1><p>Suivez les univers dans l’ordre recommandé automatiquement ou corrigé par l’administrateur.</p></div></div>
+          <sc-if value="{{ hasCollectionSections }}" hint-placeholder-val="{{ false }}"><div class="dts-collection-list"><sc-for list="{{ collectionSections }}" as="collection" hint-placeholder-count="3"><section><div class="dts-collection-head"><h2>{{ collection.name }}</h2><span>{{ collection.count }} contenus</span></div><div class="dts-collection-row"><sc-for list="{{ collection.items }}" as="item" hint-placeholder-count="4"><button onClick="{{ item.open }}" class="dts-collection-card"><div>{{ item.posterEl }}<b>{{ item.orderLabel }}</b><sc-if value="{{ item.hasStatus }}" hint-placeholder-val="{{ false }}"><em style="color:{{ item.statusColor }};border-color:{{ item.statusColor }}">{{ item.statusLabel }}</em></sc-if></div><strong>{{ item.titre }}</strong><small>{{ item.yearLabel }}</small></button></sc-for></div></section></sc-for></div></sc-if>
+          <sc-if value="{{ noCollectionSections }}" hint-placeholder-val="{{ false }}"><div class="dts-empty-state"><strong>Aucune saga détectée</strong><span>Les collections apparaîtront automatiquement lorsque plusieurs œuvres liées seront reconnues.</span></div></sc-if>
+        </main>
+      </sc-if>
+
       <nav class="dts-mobile-nav" aria-label="Navigation principale">
         <button onClick="{{ goAccueil }}" style="color:{{ mobileAccueilColor }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5.5 10.5V20h13v-9.5"></path></svg><span>Accueil</span>
@@ -462,8 +507,8 @@ input { outline: none; }
         <button onClick="{{ goAnime }}" style="color:{{ mobileAnimeColor }}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.1 5.1L20 10l-4.5 3.8.9 5.8L12 16.8l-4.4 2.8.9-5.8L4 10l5.9-1.9L12 3Z"></path></svg><span>Anime</span>
         </button>
-        <button onClick="{{ goCatalogue }}" style="color:{{ mobileCatalogueColor }}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg><span>Catalogue</span>
+        <button onClick="{{ goHistory }}" style="color:{{ mobileHistoryColor }}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v6h6"></path><path d="M12 7v5l3 2"></path></svg><span>Historique</span>
         </button>
       </nav>
     </div>
@@ -483,11 +528,12 @@ input { outline: none; }
           <div class="dts-kicker" style="color:{{ detailAccent }}">{{ detailKind }}</div>
           <h1>{{ detailTitle }}</h1>
           <sc-if value="{{ detailHasMeta }}" hint-placeholder-val="{{ false }}"><div class="dts-detail-meta">{{ detailMeta }}</div></sc-if>
+          <sc-if value="{{ detailHasStatus }}" hint-placeholder-val="{{ false }}"><div class="dts-detail-status" style="color:{{ detailStatusColor }};border-color:{{ detailStatusColor }}">{{ detailStatus }}</div></sc-if>
           <sc-if value="{{ detailHasGenres }}" hint-placeholder-val="{{ false }}"><div class="dts-chip-row"><sc-for list="{{ detailGenres }}" as="g" hint-placeholder-count="0"><span>{{ g }}</span></sc-for></div></sc-if>
           <sc-if value="{{ detailHasSynopsis }}" hint-placeholder-val="{{ false }}"><p class="dts-detail-synopsis">{{ detailSynopsis }}</p></sc-if>
           <sc-if value="{{ detailHasActors }}" hint-placeholder-val="{{ false }}"><div class="dts-detail-cast"><strong>Avec :</strong> {{ detailActors }}</div></sc-if>
           <div class="dts-detail-actions">
-            <button onClick="{{ detailPlay }}" class="dts-primary-btn">▶ {{ detailPlayLabel }}</button>
+            <sc-if value="{{ detailCanPlay }}" hint-placeholder-val="{{ false }}"><button onClick="{{ detailPlay }}" class="dts-primary-btn">▶ {{ detailPlayLabel }}</button></sc-if><sc-if value="{{ detailCannotPlay }}" hint-placeholder-val="{{ false }}"><button class="dts-primary-btn" disabled style="opacity:.55;cursor:not-allowed">Bientôt disponible</button></sc-if>
             <sc-if value="{{ detailHasTrailer }}" hint-placeholder-val="{{ false }}"><button onClick="{{ detailTrailer }}" class="dts-secondary-btn">Bande-annonce</button></sc-if>
           </div>
         </div>
@@ -523,6 +569,25 @@ input { outline: none; }
       <div class="dts-admin-grid"><sc-for list="{{ dashboardCards }}" as="card" hint-placeholder-count="0"><div class="dts-stat-card"><i style="background:{{ card.accent }}"></i><span>{{ card.label }}</span><strong>{{ card.value }}</strong></div></sc-for></div>
       <div class="dts-system-row"><sc-for list="{{ systemStatus }}" as="st" hint-placeholder-count="0"><div class="dts-system-pill"><i style="background:{{ st.color }}"></i>{{ st.label }} : {{ st.labelStatus }}</div></sc-for></div>
 
+      <section class="dts-admin-panel dts-admin-create-panel">
+        <div class="dts-panel-title pink"><i></i><h2>Créer un contenu sur Google Drive</h2></div>
+        <p class="dts-panel-help">Crée automatiquement le dossier du film, de la série ou de l’anime dans la structure DTS actuelle. Pour les séries et anime, un dossier « Saison 1 » est aussi créé. L’affiche importée est enregistrée sous le nom <strong>icon</strong>.</p>
+        <div class="dts-create-grid">
+          <label><span>Catégorie *</span><select value="{{ newContentCategory }}" onChange="{{ onNewContentCategory }}"><option value="films">Film</option><option value="series">Série</option><option value="anime">Anime</option></select></label>
+          <label class="wide"><span>Titre / nom du dossier *</span><input type="text" value="{{ newContentTitle }}" onChange="{{ onNewContentTitle }}" placeholder="Ex. Batman Begins"></input></label>
+          <label><span>Année</span><input type="text" value="{{ newContentYear }}" onChange="{{ onNewContentYear }}" placeholder="2005"></input></label>
+          <label><span>État</span><select value="{{ newContentStatus }}" onChange="{{ onNewContentStatus }}"><option value="Automatique">Automatique</option><option value="En cours">En cours</option><option value="Terminé">Terminé</option><option value="Abandonné">Abandonné</option></select></label>
+          <label class="wide"><span>Genres</span><input type="text" value="{{ newContentGenres }}" onChange="{{ onNewContentGenres }}" placeholder="Action, Fantastique, Aventure"></input></label>
+          <label><span>Saga / collection</span><input type="text" value="{{ newContentSaga }}" onChange="{{ onNewContentSaga }}" placeholder="Saga Batman"></input></label>
+          <label><span>Ordre dans la saga</span><input type="number" min="1" value="{{ newContentSagaOrder }}" onChange="{{ onNewContentSagaOrder }}" placeholder="1"></input></label>
+          <label class="wide"><span>Synopsis manuel (facultatif si TMDB trouve le titre)</span><textarea rows="4" value="{{ newContentSynopsis }}" onChange="{{ onNewContentSynopsis }}" placeholder="Description du contenu…"></textarea></label>
+          <label class="wide"><span>Bande-annonce YouTube</span><input type="url" value="{{ newContentTrailer }}" onChange="{{ onNewContentTrailer }}" placeholder="https://www.youtube.com/watch?v=…"></input></label>
+          <label><span>Prochaine sortie</span><input type="date" value="{{ newContentNextRelease }}" onChange="{{ onNewContentNextRelease }}"></input></label>
+          <label class="wide dts-file-field"><span>Affiche PNG, JPG, WEBP ou AVIF — 15 Mo maximum</span><input type="file" accept="image/png,image/jpeg,image/webp,image/avif" onChange="{{ onNewContentPoster }}"></input><small>{{ newContentPosterName }}</small></label>
+        </div>
+        <div class="dts-admin-panel-actions"><button onClick="{{ createCatalogueContent }}" class="dts-primary-btn">{{ createContentLabel }}</button></div>
+      </section>
+
       <section class="dts-admin-panel">
         <div class="dts-panel-title"><i></i><h2>Catalogue et informations</h2><span>{{ adminCatalogCount }}</span></div>
         <div class="dts-admin-catalog-toolbar" style="display:grid;grid-template-columns:minmax(220px,1fr) 210px;gap:12px;margin-bottom:18px">
@@ -535,11 +600,25 @@ input { outline: none; }
           <sc-for list="{{ adminCatalogItems }}" as="c" hint-placeholder-count="0">
             <div class="dts-admin-content-row" style="display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:14px;padding:11px;border-radius:11px;background:rgba(13,17,25,.82);border:1px solid #273042">
               <div style="position:relative;width:58px;height:82px;border-radius:7px;overflow:hidden;background:#171C27">{{ c.posterEl }}</div>
-              <div style="min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><strong style="font-size:15px;color:#F5F5F7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">{{ c.title }}</strong><span style="padding:3px 7px;border-radius:999px;background:{{ c.kindBg }};color:{{ c.kindColor }};font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase">{{ c.kindLabel }}</span><sc-if value="{{ c.manual }}" hint-placeholder-val="{{ false }}"><span style="padding:3px 7px;border-radius:999px;background:rgba(99,230,190,.12);color:#63E6BE;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase">Manuel</span></sc-if></div><div style="margin-top:6px;color:#8F98A8;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.metaLine }}</div><div style="margin-top:4px;color:{{ c.descriptionColor }};font-size:12px">{{ c.descriptionLabel }}</div></div>
+              <div style="min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><strong style="font-size:15px;color:#F5F5F7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">{{ c.title }}</strong><span style="padding:3px 7px;border-radius:999px;background:{{ c.kindBg }};color:{{ c.kindColor }};font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase">{{ c.kindLabel }}</span><sc-if value="{{ c.manual }}" hint-placeholder-val="{{ false }}"><span style="padding:3px 7px;border-radius:999px;background:rgba(99,230,190,.12);color:#63E6BE;font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase">Manuel</span></sc-if><sc-if value="{{ c.hasStatus }}" hint-placeholder-val="{{ false }}"><span style="padding:3px 7px;border-radius:999px;border:1px solid {{ c.statusColor }};color:{{ c.statusColor }};font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase">{{ c.status }}</span></sc-if></div><div style="margin-top:6px;color:#8F98A8;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.metaLine }}</div><div style="margin-top:4px;color:{{ c.descriptionColor }};font-size:12px">{{ c.descriptionLabel }}</div></div>
               <button onClick="{{ c.edit }}" class="dts-outline-btn" style="white-space:nowrap">Modifier</button>
             </div>
           </sc-for>
         </div>
+      </section>
+
+      <section class="dts-admin-panel">
+        <div class="dts-panel-title gold"><i></i><h2>Calendrier des prochaines sorties</h2><span>{{ plannedReleasesCount }}</span></div>
+        <div class="dts-release-admin-form"><label><span>Titre *</span><input type="text" value="{{ releaseTitle }}" onChange="{{ onReleaseTitle }}" placeholder="Nom du film, épisode ou série"></input></label><label><span>Date *</span><input type="date" value="{{ releaseDate }}" onChange="{{ onReleaseDate }}"></input></label><label><span>Type</span><select value="{{ releaseCategory }}" onChange="{{ onReleaseCategory }}"><option value="">Sortie DTS</option><option value="Film">Film</option><option value="Série">Série</option><option value="Anime">Anime</option><option value="Épisode">Épisode</option></select></label><label class="wide"><span>Précision</span><input type="text" value="{{ releaseDescription }}" onChange="{{ onReleaseDescription }}" placeholder="Ex. Saison 2 — Épisode 4"></input></label><button onClick="{{ addPlannedRelease }}" class="dts-primary-btn">{{ releaseSaveLabel }}</button></div>
+        <div class="dts-admin-release-list"><sc-for list="{{ plannedReleases }}" as="release" hint-placeholder-count="0"><article><time>{{ release.date }}</time><div><strong>{{ release.title }}</strong><span>{{ release.description }}</span></div><button onClick="{{ release.remove }}" class="dts-outline-btn danger-outline">Supprimer</button></article></sc-for></div>
+      </section>
+
+      <section class="dts-admin-panel">
+        <div class="dts-panel-title cyan"><i></i><h2>Contrôle automatique du catalogue</h2></div>
+        <p class="dts-panel-help">Détecte les vidéos absentes ou inaccessibles, les pistes audio manquantes, les durées invalides, les doublons, les affiches et descriptions absentes.</p>
+        <div class="dts-analysis-toolbar"><button onClick="{{ startCatalogueAnalysis }}" class="dts-secondary-btn">{{ analysisLabel }}</button><sc-if value="{{ analysisRunning }}" hint-placeholder-val="{{ false }}"><div class="dts-analysis-progress"><i style="width:{{ analysisProgress }}"></i><span>{{ analysisProgress }}</span></div></sc-if></div>
+        <div class="dts-analysis-list"><sc-for list="{{ analysisIssues }}" as="issue" hint-placeholder-count="0"><article style="border-left-color:{{ issue.color }}"><span style="color:{{ issue.color }}">{{ issue.level }}</span><div><strong>{{ issue.title }}</strong><small>{{ issue.type }} — {{ issue.details }}</small></div></article></sc-for></div>
+        <sc-if value="{{ analysisClean }}" hint-placeholder-val="{{ false }}"><div class="dts-success-row">✓ Aucun problème détecté lors de la dernière analyse.</div></sc-if>
       </section>
 
       <section class="dts-admin-panel">
@@ -562,13 +641,23 @@ input { outline: none; }
             <div class="dts-user-row">
               <div class="dts-user-avatar">{{ u.initial }}</div>
               <div class="dts-user-main"><strong>{{ u.pseudo }}</strong><div><span style="color:{{ u.statusColor }}">●</span> {{ u.expiresLabel }} · {{ u.deviceLabel }}</div></div>
-              <div class="dts-user-actions"><button onClick="{{ u.edit }}">Modifier</button><sc-if value="{{ u.canReset }}" hint-placeholder-val="{{ false }}"><button onClick="{{ u.resetDevices }}">Déconnecter</button></sc-if><button onClick="{{ u.askDelete }}" class="danger">Supprimer</button></div>
+              <div class="dts-user-actions"><button onClick="{{ u.toggleDevices }}">Appareils</button><button onClick="{{ u.edit }}">Modifier</button><sc-if value="{{ u.canReset }}" hint-placeholder-val="{{ false }}"><button onClick="{{ u.resetDevices }}">Tout déconnecter</button></sc-if><button onClick="{{ u.askDelete }}" class="danger">Supprimer</button></div>
             </div>
             <sc-if value="{{ u.isEditing }}" hint-placeholder-val="{{ false }}">
               <div class="dts-user-edit"><strong>Paramètres de {{ editingPseudo }}</strong><label>Expiration<input type="date" value="{{ editExpires }}" onChange="{{ onEditExpires }}"></input></label><label>Appareils maximum<input type="number" min="1" max="20" value="{{ editMaxDevices }}" onChange="{{ onEditMaxDevices }}"></input></label><button onClick="{{ saveUserSettings }}" class="dts-primary-btn">{{ saveUserLabel }}</button><button onClick="{{ cancelEditUser }}" class="dts-outline-btn">Annuler</button></div>
             </sc-if>
+            <sc-if value="{{ u.expanded }}" hint-placeholder-val="{{ false }}">
+              <div class="dts-device-list"><sc-for list="{{ u.devices }}" as="device" hint-placeholder-count="0"><article><div><strong>{{ device.name }}</strong><span>Première connexion : {{ device.firstSeen }}</span><span>Dernière connexion : {{ device.lastSeen }}</span></div><button onClick="{{ device.disconnect }}" class="dts-outline-btn danger-outline">{{ device.buttonLabel }}</button></article></sc-for><sc-if value="{{ u.noDevices }}" hint-placeholder-val="{{ false }}"><div class="dts-empty-inline">Aucun appareil enregistré.</div></sc-if></div>
+            </sc-if>
           </sc-for>
         </div>
+      </section>
+
+      <section class="dts-admin-panel">
+        <div class="dts-panel-title purple"><i></i><h2>Journal et sauvegardes</h2></div>
+        <div class="dts-admin-panel-actions split"><button onClick="{{ loadAdminLogs }}" class="dts-outline-btn">Actualiser le journal</button><button onClick="{{ createBackup }}" class="dts-secondary-btn">{{ backupLabel }}</button></div>
+        <p class="dts-panel-help">Une sauvegarde quotidienne est aussi créée automatiquement lors des modifications administratives. Elle contient les comptes, les informations manuelles, les sorties et le journal.</p>
+        <div class="dts-log-list"><sc-for list="{{ adminLogs }}" as="log" hint-placeholder-count="0"><article><time>{{ log.date }}</time><strong>{{ log.action }}</strong><span>{{ log.admin }}</span><small>{{ log.details }}</small></article></sc-for></div>
       </section>
     </div>
   </sc-if>
@@ -607,6 +696,11 @@ input { outline: none; }
           <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Langue originale</span><input type="text" value="{{ metadataLanguage }}" onChange="{{ onMetadataLanguage }}" placeholder="fr, en, ja…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
           <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Acteurs / voix</span><input type="text" value="{{ metadataActors }}" onChange="{{ onMetadataActors }}" placeholder="Nom 1, Nom 2…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
           <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Réalisateurs / créateurs</span><input type="text" value="{{ metadataDirectors }}" onChange="{{ onMetadataDirectors }}" placeholder="Nom 1, Nom 2…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">État du contenu</span><select value="{{ metadataStatus }}" onChange="{{ onMetadataStatus }}" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"><option value="Automatique">Automatique</option><option value="En cours">En cours</option><option value="Terminé">Terminé</option><option value="Abandonné">Abandonné</option></select></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Prochaine sortie</span><input type="date" value="{{ metadataNextRelease }}" onChange="{{ onMetadataNextRelease }}" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Saga / collection</span><input type="text" value="{{ metadataSaga }}" onChange="{{ onMetadataSaga }}" placeholder="Ex. Univers Batman" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Ordre dans la saga</span><input type="number" min="1" value="{{ metadataSagaOrder }}" onChange="{{ onMetadataSagaOrder }}" placeholder="1" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
+          <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">Alias de recherche, séparés par des virgules</span><input type="text" value="{{ metadataAliases }}" onChange="{{ onMetadataAliases }}" placeholder="JJK, Batman 1, nom alternatif…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
           <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">URL de l’affiche</span><input type="url" value="{{ metadataPosterUrl }}" onChange="{{ onMetadataPosterUrl }}" placeholder="https://…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
           <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">URL de la bannière / arrière-plan</span><input type="url" value="{{ metadataBackdropUrl }}" onChange="{{ onMetadataBackdropUrl }}" placeholder="https://…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
           <label style="display:flex;flex-direction:column;gap:7px;grid-column:1/-1"><span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#9DA4B3;font-weight:700">URL de la bande-annonce YouTube</span><input type="url" value="{{ metadataTrailerUrl }}" onChange="{{ onMetadataTrailerUrl }}" placeholder="https://www.youtube.com/watch?v=…" style="height:44px;border-radius:8px;border:1px solid #354057;background:#0D1119;color:#FFF;padding:0 13px;outline:none"></input></label>
@@ -722,7 +816,7 @@ input { outline: none; }
   <!-- ============ PLAYER ============ -->
   <sc-if value="{{ isPlayer }}" hint-placeholder-val="{{ false }}">
     <div ref="{{ playerWrapRef }}" onMouseMove="{{ wakeControls }}" class="dts-player">
-      <sc-if value="{{ videoUrl }}" hint-placeholder-val="{{ false }}"><div class="dts-video-stage">{{ videoEl }}{{ audioEl }}<sc-if value="{{ subtitleText }}" hint-placeholder-val="{{ false }}"><div class="dts-subtitle" style="bottom:{{ subtitleBottom }};top:{{ subtitleTop }};transform:{{ subtitleTransform }};font-size:{{ subtitleFontSize }};color:{{ subtitleColor }};background:{{ subtitleBackground }}">{{ subtitleText }}</div></sc-if></div></sc-if>
+      <sc-if value="{{ videoUrl }}" hint-placeholder-val="{{ false }}"><div class="dts-video-stage">{{ videoEl }}{{ audioEl }}<sc-if value="{{ subtitleText }}" hint-placeholder-val="{{ false }}"><div class="dts-subtitle" style="bottom:{{ subtitleBottom }};top:{{ subtitleTop }};transform:{{ subtitleTransform }};font-size:{{ subtitleFontSize }};font-family:{{ subtitleFontFamily }};text-shadow:{{ subtitleTextShadow }};color:{{ subtitleColor }};background:{{ subtitleBackground }}">{{ subtitleText }}</div></sc-if></div></sc-if>
       <sc-if value="{{ audioSwitching }}" hint-placeholder-val="{{ false }}"><div class="dts-player-loading-pill"><i></i>Chargement de l'audio…</div></sc-if>
       <sc-if value="{{ videoLoading }}" hint-placeholder-val="{{ false }}"><div class="dts-player-center"><div class="dts-spinner"></div><div>Chargement de la vidéo…</div></div></sc-if>
       <sc-if value="{{ videoError }}" hint-placeholder-val="{{ false }}"><div class="dts-player-center error"><div>{{ videoError }}</div><button onClick="{{ exitPlayer }}" class="dts-outline-btn">Retour</button></div></sc-if>
@@ -730,7 +824,7 @@ input { outline: none; }
       <sc-if value="{{ nextEpisodePrompt }}" hint-placeholder-val="{{ false }}"><div class="dts-next-episode"><div class="dts-kicker">À suivre</div><strong>{{ nextEpisodeTitle }}</strong><span>Lecture dans {{ nextEpisodeCountdown }} s</span><div><button onClick="{{ cancelAutoNext }}" class="dts-outline-btn">Annuler</button><button onClick="{{ playAutoNextNow }}" class="dts-primary-btn">Lire maintenant</button></div></div></sc-if>
 
       <sc-if value="{{ playerUnlocked }}" hint-placeholder-val="{{ true }}">
-        <div class="dts-player-top" style="opacity:{{ controlsOpacity }};pointer-events:{{ controlsPE }}"><button onClick="{{ exitPlayer }}" class="dts-player-icon-text">← Retour</button><strong>{{ playingTitle }}</strong><div class="dts-player-top-actions"><sc-if value="{{ hasEpisodePanel }}" hint-placeholder-val="{{ false }}"><button onClick="{{ toggleEpisodePanel }}" class="dts-player-icon-text">Épisodes</button></sc-if><button onClick="{{ togglePlayerLock }}" class="dts-player-icon-text">Verrouiller</button></div></div>
+        <div class="dts-player-top" style="opacity:{{ controlsOpacity }};pointer-events:{{ controlsPE }}"><button onClick="{{ exitPlayer }}" class="dts-player-icon-text">← Retour</button><strong>{{ playingTitle }}</strong><div class="dts-player-top-actions"><button onClick="{{ openShortcutsHelp }}" class="dts-player-icon-text" title="Raccourcis clavier">?</button><sc-if value="{{ pipSupported }}" hint-placeholder-val="{{ false }}"><button onClick="{{ togglePictureInPicture }}" class="dts-player-icon-text">{{ pipLabel }}</button></sc-if><sc-if value="{{ castAvailable }}" hint-placeholder-val="{{ false }}"><button onClick="{{ castCurrentVideo }}" class="dts-player-icon-text">{{ castLabel }}</button></sc-if><sc-if value="{{ airplayAvailable }}" hint-placeholder-val="{{ false }}"><button onClick="{{ showAirPlayPicker }}" class="dts-player-icon-text">AirPlay</button></sc-if><sc-if value="{{ hasEpisodePanel }}" hint-placeholder-val="{{ false }}"><button onClick="{{ toggleEpisodePanel }}" class="dts-player-icon-text">Épisodes</button></sc-if><button onClick="{{ togglePlayerLock }}" class="dts-player-icon-text">Verrouiller</button></div></div>
         <div class="dts-player-bottom" style="opacity:{{ controlsOpacity }};pointer-events:{{ controlsPE }}">
           <div onPointerDown="{{ seekDown }}" class="dts-seek"><div><span style="width:{{ progressPct }}"></span><i style="left:{{ progressPct }}"></i></div></div>
           <div class="dts-controls-row">
@@ -748,7 +842,10 @@ input { outline: none; }
 
       <sc-if value="{{ episodePanelOpen }}" hint-placeholder-val="{{ false }}"><aside class="dts-player-drawer"><div class="dts-drawer-head"><strong>Saisons et épisodes</strong><button onClick="{{ closeEpisodePanel }}">✕</button></div><div class="dts-drawer-scroll"><sc-for list="{{ playerSeasons }}" as="season" hint-placeholder-count="0"><h3>{{ season.nom }}</h3><sc-for list="{{ season.episodes }}" as="ep" hint-placeholder-count="0"><button onClick="{{ ep.play }}" style="background:{{ ep.bg }};border-color:{{ ep.border }}">▶ {{ ep.nom }}</button></sc-for></sc-for></div></aside></sc-if>
 
-      <sc-if value="{{ subtitleSettingsOpen }}" hint-placeholder-val="{{ false }}"><aside class="dts-subtitle-panel"><div class="dts-drawer-head"><strong>Sous-titres</strong><button onClick="{{ toggleSubtitleSettings }}">✕</button></div><label>Taille<div class="dts-stepper"><button onClick="{{ subtitleSizeDown }}">−</button><span>{{ subtitleSizeLabel }}</span><button onClick="{{ subtitleSizeUp }}">+</button></div></label><label>Couleur<input type="color" value="{{ subtitleColor }}" onChange="{{ onSubtitleColor }}"></input></label><label>Fond<div class="dts-choice-row"><sc-for list="{{ subtitleBgOptions }}" as="o" hint-placeholder-count="0"><button onClick="{{ o.select }}" style="background:{{ o.bg }}">{{ o.label }}</button></sc-for></div></label><label>Position<div class="dts-choice-row"><sc-for list="{{ subtitlePositionOptions }}" as="o" hint-placeholder-count="0"><button onClick="{{ o.select }}">{{ o.label }}</button></sc-for></div></label></aside></sc-if>
+      <sc-if value="{{ subtitleSettingsOpen }}" hint-placeholder-val="{{ false }}"><aside class="dts-subtitle-panel"><div class="dts-drawer-head"><strong>Sous-titres</strong><button onClick="{{ toggleSubtitleSettings }}">✕</button></div><label>Taille<div class="dts-stepper"><button onClick="{{ subtitleSizeDown }}">−</button><span>{{ subtitleSizeLabel }}</span><button onClick="{{ subtitleSizeUp }}">+</button></div></label><label>Police<select value="{{ subtitleFont }}" onChange="{{ onSubtitleFont }}"><option value="Barlow">Moderne</option><option value="serif">Classique</option><option value="mono">Monospace</option></select></label><label>Contour<select value="{{ subtitleEdge }}" onChange="{{ onSubtitleEdge }}"><option value="shadow">Ombre</option><option value="outline">Contour fort</option><option value="none">Aucun</option></select></label><label>Couleur<input type="color" value="{{ subtitleColor }}" onChange="{{ onSubtitleColor }}"></input></label><label>Opacité du fond<input type="range" min="0" max="100" step="5" value="{{ subtitleOpacity }}" onChange="{{ onSubtitleOpacity }}"></input><span>{{ subtitleOpacity }}%</span></label><label>Fond<div class="dts-choice-row"><sc-for list="{{ subtitleBgOptions }}" as="o" hint-placeholder-count="0"><button onClick="{{ o.select }}" style="background:{{ o.bg }}">{{ o.label }}</button></sc-for></div></label><label>Position<div class="dts-choice-row"><sc-for list="{{ subtitlePositionOptions }}" as="o" hint-placeholder-count="0"><button onClick="{{ o.select }}">{{ o.label }}</button></sc-for></div></label><label>Synchronisation<div class="dts-stepper"><button onClick="{{ subtitleDelayDown }}">−0,25</button><span>{{ subtitleDelayLabel }}</span><button onClick="{{ subtitleDelayUp }}">+0,25</button></div><button onClick="{{ subtitleDelayReset }}" class="dts-mini-reset">Réinitialiser</button></label></aside></sc-if>
+      <sc-if value="{{ shortcutsHelpOpen }}" hint-placeholder-val="{{ false }}">
+        <div class="dts-shortcuts-overlay" onClick="{{ closeShortcutsHelp }}"><div class="dts-shortcuts-card" onClick="{{ stopClick }}"><div class="dts-drawer-head"><div><div class="dts-kicker">LECTEUR DTS</div><strong>Raccourcis clavier</strong></div><button onClick="{{ closeShortcutsHelp }}">✕</button></div><p>Utilise ces touches pendant la lecture. Cette aide reste disponible avec le bouton « ? ».</p><div class="dts-shortcut-grid"><sc-for list="{{ shortcutItems }}" as="shortcut" hint-placeholder-count="8"><div><kbd>{{ shortcut.key }}</kbd><span>{{ shortcut.action }}</span></div></sc-for></div><button onClick="{{ closeShortcutsHelp }}" class="dts-primary-btn">J’ai compris</button></div></div>
+      </sc-if>
     </div>
   </sc-if>
 </div>
@@ -758,6 +855,7 @@ class Component extends DCLogic {
   state = {
     view: 'login',
     pseudo: '', password: '', loginError: '', loggingIn: false, rememberMe: false, rowNav: {}, history: [], confirmClear: false, myList: [], heroIdx: 0, searchQuery: '', libTab: 'accueil', catType: 'tous', catGenre: 'Tous les genres', catYear: 'Toutes les années', catLanguage: 'Toutes les langues', catSort: 'recent',
+    shortcutsHelpOpen: false, shortcutsSeen: false, castAvailable: false, castBusy: false, airplayAvailable: false, pipActive: false,
     token: null, userPseudo: '',
     library: null, libLoading: false, libError: '',
     posters: {},
@@ -768,11 +866,15 @@ class Component extends DCLogic {
     returnView: 'library',
     playing: false, currentTime: 0, duration: 0, volume: 1, muted: false,
     controlsVisible: true, playerLocked: false, episodePanelOpen: false, subtitleSettingsOpen: false,
-    subtitleSize: 1, subtitleColor: '#FFFFFF', subtitleBackground: 'rgba(0,0,0,0.72)', subtitlePosition: 'bottom',
+    subtitleSize: 1, subtitleColor: '#FFFFFF', subtitleBackground: 'rgba(0,0,0,0.72)', subtitlePosition: 'bottom', subtitleFont: 'Barlow', subtitleEdge: 'shadow', subtitleOpacity: 72, subtitleDelay: 0,
     nextEpisodePrompt: false, nextEpisodeCountdown: 0,
     estAdmin: false,
     users: null, usersLoading: false, usersError: '', dashboard: null, dashboardLoading: false, dashboardError: '', refreshingLibrary: false,
     adminCatalogQuery: '', adminCatalogType: 'tous', editingContent: null, savingContentMetadata: false, resettingContentMetadata: false,
+    metadataStatus: 'Automatique', metadataNextRelease: '', metadataSaga: '', metadataSagaOrder: '', metadataAliases: '',
+    newContentCategory: 'films', newContentTitle: '', newContentSynopsis: '', newContentYear: '', newContentGenres: '', newContentStatus: 'Automatique', newContentSaga: '', newContentSagaOrder: '', newContentTrailer: '', newContentNextRelease: '', newContentPoster: null, newContentPosterName: '', creatingContent: false,
+    plannedReleases: [], releasesLoading: false, releaseTitle: '', releaseDate: '', releaseDescription: '', releaseCategory: '', savingRelease: false,
+    adminLogs: [], logsLoading: false, backupCreating: false, analysis: null, analysisPolling: false, expandedDevicesPseudo: '', disconnectingDevice: '',
     metadataTitle: '', metadataSynopsis: '', metadataYear: '', metadataDuration: '', metadataGenres: '', metadataCertification: '', metadataNote: '', metadataLanguage: '', metadataActors: '', metadataDirectors: '', metadataPosterUrl: '', metadataBackdropUrl: '', metadataTrailerUrl: '',
     newUserPseudo: '', newUserPassword: '', newUserExpires: '', newUserMaxDevices: '3', addingUser: false,
     editingPseudo: '', editExpires: '', editMaxDevices: '3', savingUser: false, resettingDevices: false,
@@ -789,7 +891,7 @@ class Component extends DCLogic {
     setTimeout(() => this.setState(s => ({ toasts: s.toasts.filter(t => t.id !== id) })), 3500);
   }
 
-  openAdmin = () => { this.setState({ view: 'admin' }, () => { this.loadUsers(); this.loadDashboard(); if (!this.state.library) this.loadLibrary(); }); };
+  openAdmin = () => { this.setState({ view: 'admin' }, () => { this.loadUsers(); this.loadDashboard(); this.loadPlannedReleases(); this.loadAdminLogs(); this.loadAnalysisStatus(); if (!this.state.library) this.loadLibrary(); }); };
 
   loadDashboard = async () => {
     this.setState({ dashboardLoading: true, dashboardError: '' });
@@ -838,6 +940,11 @@ class Component extends DCLogic {
       metadataPosterUrl: item.poster_url || '',
       metadataBackdropUrl: item.backdrop_url || '',
       metadataTrailerUrl: item.bande_annonce_url || '',
+      metadataStatus: item.statut || 'Automatique',
+      metadataNextRelease: item.prochaine_sortie || '',
+      metadataSaga: item.saga || item.collection_name || '',
+      metadataSagaOrder: item.ordre_saga || '',
+      metadataAliases: item.alias_recherche || '',
     });
   };
 
@@ -874,6 +981,11 @@ class Component extends DCLogic {
           poster_url: String(this.state.metadataPosterUrl || '').trim(),
           backdrop_url: String(this.state.metadataBackdropUrl || '').trim(),
           bande_annonce_url: String(this.state.metadataTrailerUrl || '').trim(),
+          statut: String(this.state.metadataStatus || 'Automatique'),
+          prochaine_sortie: String(this.state.metadataNextRelease || '').trim(),
+          saga: String(this.state.metadataSaga || '').trim(),
+          ordre_saga: String(this.state.metadataSagaOrder || '').trim(),
+          alias_recherche: String(this.state.metadataAliases || '').trim(),
         })
       });
       if (res.status === 401 || res.status === 403) return this.sessionExpired();
@@ -917,6 +1029,140 @@ class Component extends DCLogic {
   onMetadataPosterUrl = (e) => this.setState({ metadataPosterUrl: e.target.value });
   onMetadataBackdropUrl = (e) => this.setState({ metadataBackdropUrl: e.target.value });
   onMetadataTrailerUrl = (e) => this.setState({ metadataTrailerUrl: e.target.value });
+  onMetadataStatus = (e) => this.setState({ metadataStatus: e.target.value });
+  onMetadataNextRelease = (e) => this.setState({ metadataNextRelease: e.target.value });
+  onMetadataSaga = (e) => this.setState({ metadataSaga: e.target.value });
+  onMetadataSagaOrder = (e) => this.setState({ metadataSagaOrder: e.target.value });
+  onMetadataAliases = (e) => this.setState({ metadataAliases: e.target.value });
+
+
+  // ---- création de contenu / affiche ----
+  onNewContentCategory = (e) => this.setState({ newContentCategory: e.target.value });
+  onNewContentTitle = (e) => this.setState({ newContentTitle: e.target.value });
+  onNewContentSynopsis = (e) => this.setState({ newContentSynopsis: e.target.value });
+  onNewContentYear = (e) => this.setState({ newContentYear: e.target.value });
+  onNewContentGenres = (e) => this.setState({ newContentGenres: e.target.value });
+  onNewContentStatus = (e) => this.setState({ newContentStatus: e.target.value });
+  onNewContentSaga = (e) => this.setState({ newContentSaga: e.target.value });
+  onNewContentSagaOrder = (e) => this.setState({ newContentSagaOrder: e.target.value });
+  onNewContentTrailer = (e) => this.setState({ newContentTrailer: e.target.value });
+  onNewContentNextRelease = (e) => this.setState({ newContentNextRelease: e.target.value });
+  onNewContentPoster = (e) => {
+    const file = e.target.files && e.target.files[0];
+    this.setState({ newContentPoster: file || null, newContentPosterName: file ? file.name : '' });
+  };
+
+  createCatalogueContent = async () => {
+    if (this.state.creatingContent) return;
+    const title = String(this.state.newContentTitle || '').trim();
+    if (!title) { this.toast('Le titre du nouveau contenu est obligatoire.', false); return; }
+    const fd = new FormData();
+    fd.append('categorie', this.state.newContentCategory);
+    fd.append('titre', title);
+    fd.append('synopsis', this.state.newContentSynopsis || '');
+    fd.append('annee', this.state.newContentYear || '');
+    fd.append('genres', this.state.newContentGenres || '');
+    fd.append('statut', this.state.newContentStatus || 'Automatique');
+    fd.append('saga', this.state.newContentSaga || '');
+    fd.append('ordre_saga', this.state.newContentSagaOrder || '');
+    fd.append('bande_annonce_url', this.state.newContentTrailer || '');
+    fd.append('prochaine_sortie', this.state.newContentNextRelease || '');
+    if (this.state.newContentPoster) fd.append('poster', this.state.newContentPoster);
+    this.setState({ creatingContent: true });
+    try {
+      const res = await fetch(this.api + '/admin/catalogue/creer', { method: 'POST', headers: { Authorization: 'Bearer ' + this.state.token }, body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 || res.status === 403) return this.sessionExpired();
+      if (!res.ok) throw new Error(data.detail || ('Erreur ' + res.status));
+      this.toast('« ' + title + ' » a été créé sur Google Drive.', true);
+      this.setState({ creatingContent: false, newContentTitle: '', newContentSynopsis: '', newContentYear: '', newContentGenres: '', newContentStatus: 'Automatique', newContentSaga: '', newContentSagaOrder: '', newContentTrailer: '', newContentNextRelease: '', newContentPoster: null, newContentPosterName: '' }, () => { this.refreshLibraryAdmin(); });
+    } catch (e) {
+      this.setState({ creatingContent: false });
+      this.toast(e.message || 'Création impossible.', false);
+    }
+  };
+
+  // ---- calendrier des sorties ----
+  loadPlannedReleases = async () => {
+    this.setState({ releasesLoading: true });
+    try {
+      const res = await this.authFetch('/admin/sorties');
+      if (!res.ok) throw new Error('Erreur ' + res.status);
+      const data = await res.json();
+      this.setState({ releasesLoading: false, plannedReleases: Array.isArray(data.sorties) ? data.sorties : [] });
+    } catch (e) { this.setState({ releasesLoading: false }); }
+  };
+  onReleaseTitle = (e) => this.setState({ releaseTitle: e.target.value });
+  onReleaseDate = (e) => this.setState({ releaseDate: e.target.value });
+  onReleaseDescription = (e) => this.setState({ releaseDescription: e.target.value });
+  onReleaseCategory = (e) => this.setState({ releaseCategory: e.target.value });
+  addPlannedRelease = async () => {
+    if (this.state.savingRelease) return;
+    if (!this.state.releaseTitle.trim() || !this.state.releaseDate) { this.toast('Renseigne le titre et la date de sortie.', false); return; }
+    this.setState({ savingRelease: true });
+    try {
+      const res = await this.authFetch('/admin/sorties', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ titre:this.state.releaseTitle.trim(), date:this.state.releaseDate, description:this.state.releaseDescription.trim(), categorie:this.state.releaseCategory }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || ('Erreur ' + res.status));
+      this.toast('Sortie ajoutée au calendrier.', true);
+      this.setState({ savingRelease:false, releaseTitle:'', releaseDate:'', releaseDescription:'', releaseCategory:'' }, () => { this.loadPlannedReleases(); this.loadLibrary(); });
+    } catch (e) { this.setState({savingRelease:false}); this.toast(e.message || 'Ajout impossible.', false); }
+  };
+  deletePlannedRelease = async (id) => {
+    try {
+      const res = await this.authFetch('/admin/sorties/' + encodeURIComponent(id), {method:'DELETE'});
+      if (!res.ok) throw new Error('Erreur ' + res.status);
+      this.toast('Sortie supprimée.', true); this.loadPlannedReleases(); this.loadLibrary();
+    } catch(e) { this.toast('Suppression impossible.', false); }
+  };
+
+  // ---- analyse du catalogue ----
+  loadAnalysisStatus = async () => {
+    try { const res = await this.authFetch('/admin/analyse-catalogue'); if (res.ok) this.setState({analysis:await res.json()}); } catch(e) {}
+  };
+  startCatalogueAnalysis = async () => {
+    if (this.state.analysis && this.state.analysis.running) return;
+    try {
+      const res = await this.authFetch('/admin/analyse-catalogue?profonde=true', {method:'POST'});
+      if (!res.ok) throw new Error('Erreur ' + res.status);
+      this.setState({analysis:await res.json()});
+      this._startAnalysisPolling();
+      this.toast('Analyse approfondie lancée. Tu peux laisser cette page ouverte.', true);
+    } catch(e) { this.toast('Impossible de lancer l’analyse.', false); }
+  };
+  _startAnalysisPolling() {
+    if (this._analysisTimer) clearInterval(this._analysisTimer);
+    this._analysisTimer = setInterval(async () => {
+      try {
+        const res = await this.authFetch('/admin/analyse-catalogue');
+        if (!res.ok) return;
+        const data = await res.json(); this.setState({analysis:data});
+        if (!data.running) { clearInterval(this._analysisTimer); this._analysisTimer=null; this.toast('Analyse du catalogue terminée.', true); }
+      } catch(e) {}
+    }, 3000);
+  }
+
+  // ---- journal et sauvegardes ----
+  loadAdminLogs = async () => {
+    this.setState({logsLoading:true});
+    try { const res=await this.authFetch('/admin/journal'); const data=await res.json(); this.setState({logsLoading:false,adminLogs:Array.isArray(data.logs)?data.logs:[]}); }
+    catch(e){ this.setState({logsLoading:false}); }
+  };
+  createBackup = async () => {
+    if (this.state.backupCreating) return;
+    this.setState({backupCreating:true});
+    try { const res=await this.authFetch('/admin/sauvegarde',{method:'POST'}); const data=await res.json(); if(!res.ok) throw new Error(data.detail||'Erreur'); this.toast('Sauvegarde créée dans Google Drive.',true); this.setState({backupCreating:false},()=>this.loadAdminLogs()); }
+    catch(e){ this.setState({backupCreating:false}); this.toast('Sauvegarde impossible.',false); }
+  };
+
+  // ---- appareils individuels ----
+  toggleUserDevices = (pseudo) => this.setState(st => ({expandedDevicesPseudo: st.expandedDevicesPseudo === pseudo ? '' : pseudo}));
+  disconnectOneDevice = async (pseudo, deviceId) => {
+    if (this.state.disconnectingDevice) return;
+    this.setState({disconnectingDevice:deviceId});
+    try { const res=await this.authFetch('/admin/utilisateur/'+encodeURIComponent(pseudo)+'/appareil/'+encodeURIComponent(deviceId),{method:'DELETE'}); if(!res.ok) throw new Error('Erreur '+res.status); this.toast('Appareil déconnecté.',true); this.setState({disconnectingDevice:''},()=>{this.loadUsers();this.loadDashboard();}); }
+    catch(e){ this.setState({disconnectingDevice:''}); this.toast('Déconnexion impossible.',false); }
+  };
 
   loadUsers = async () => {
     this.setState({ usersLoading: true, usersError: '' });
@@ -1051,6 +1297,11 @@ class Component extends DCLogic {
         subtitleColor: sub.color || '#FFFFFF',
         subtitleBackground: sub.background || 'rgba(0,0,0,0.72)',
         subtitlePosition: sub.position || 'bottom',
+        subtitleFont: sub.font || 'Barlow',
+        subtitleEdge: sub.edge || 'shadow',
+        subtitleOpacity: Number(sub.opacity) >= 0 ? Number(sub.opacity) : 72,
+        subtitleDelay: Number(sub.delay) || 0,
+        shortcutsSeen: localStorage.getItem(this._userStorageKey('shortcuts_seen', pseudo)) === '1',
       });
     } catch (e) {}
   }
@@ -1061,7 +1312,7 @@ class Component extends DCLogic {
 
   _saveSubtitlePreferences(next) {
     this._persistPreference('subtitle_settings', {
-      size: next.subtitleSize, color: next.subtitleColor, background: next.subtitleBackground, position: next.subtitlePosition
+      size: next.subtitleSize, color: next.subtitleColor, background: next.subtitleBackground, position: next.subtitlePosition, font: next.subtitleFont, edge: next.subtitleEdge, opacity: next.subtitleOpacity, delay: next.subtitleDelay
     });
   }
 
@@ -1150,7 +1401,9 @@ class Component extends DCLogic {
   _handleBeforeUnload = () => this._saveCurrentProgress();
 
   componentDidMount() {
-    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this._handleVisibilityChange);
+    if (typeof document !== 'undefined') { document.addEventListener('visibilitychange', this._handleVisibilityChange); document.addEventListener('keydown', this._handleGlobalKeyDown); }
+    this._initCastSupport();
+    if (typeof window !== 'undefined') window.__onGCastApiAvailable = (available) => { if (available) this._initCastSupport(); };
     if (typeof window !== 'undefined') window.addEventListener('beforeunload', this._handleBeforeUnload);
     try {
       const token = localStorage.getItem('danatrap_token');
@@ -1172,11 +1425,70 @@ class Component extends DCLogic {
     } catch (e) {}
   }
 
-  componentWillUnmount() {
-    this._saveCurrentProgress();
-    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this._handleVisibilityChange);
-    if (typeof window !== 'undefined') window.removeEventListener('beforeunload', this._handleBeforeUnload);
-  }
+  _handleGlobalKeyDown = (e) => {
+    if (this.state.view !== 'player') return;
+    const tag = String((e.target && e.target.tagName) || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
+    const key = String(e.key || '').toLowerCase();
+    if (key === ' ' || key === 'spacebar') { e.preventDefault(); this.togglePlay(); }
+    else if (key === 'arrowright') { e.preventDefault(); this.skipForward(); }
+    else if (key === 'arrowleft') { e.preventDefault(); this.skipBack(); }
+    else if (key === 'f') this.toggleFullscreen();
+    else if (key === 'm') this.toggleMute();
+    else if (key === 's') this._setSubtitleTrack(this.state.currentSubtitleTrack >= 0 ? '-1' : (this.state.subtitleTracks.length ? '0' : '-1'));
+    else if (key === 'n' && this._epNeighbor(1)) this.nextEpisode();
+    else if (key === 'p') this.togglePictureInPicture();
+    else if (key === 'c') this.castCurrentVideo();
+    else if (key === '?' || key === 'h') this.openShortcutsHelp();
+  };
+  openShortcutsHelp = () => this.setState({shortcutsHelpOpen:true,controlsVisible:true});
+  closeShortcutsHelp = () => {
+    try { localStorage.setItem(this._userStorageKey('shortcuts_seen'), '1'); } catch(e) {}
+    this.setState({shortcutsHelpOpen:false,shortcutsSeen:true});
+  };
+
+  togglePictureInPicture = async () => {
+    const v=this._video; if(!v) return;
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else if (v.requestPictureInPicture && document.pictureInPictureEnabled) await v.requestPictureInPicture();
+      else if (v.webkitSetPresentationMode) v.webkitSetPresentationMode(v.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+      else this.toast('Le mode image dans l’image n’est pas disponible sur ce navigateur.',false);
+    } catch(e){ this.toast('Impossible d’activer le mode image dans l’image.',false); }
+  };
+
+  showAirPlayPicker = () => {
+    const v=this._video;
+    if(v && typeof v.webkitShowPlaybackTargetPicker === 'function') { try { v.webkitShowPlaybackTargetPicker(); } catch(e){} }
+    else this.toast('AirPlay est disponible uniquement avec Safari et un appareil compatible.',false);
+  };
+
+  _initCastSupport = () => {
+    try {
+      if (!window.cast || !window.cast.framework || !window.chrome || !chrome.cast) return;
+      cast.framework.CastContext.getInstance().setOptions({receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID, autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED});
+      this.setState({castAvailable:true});
+    } catch(e) { console.warn('[DTS] Cast indisponible',e); }
+  };
+  castCurrentVideo = async () => {
+    if(!this.state.videoUrl) return;
+    if(!this.state.castAvailable) { this.toast('Aucun appareil Chromecast détecté ou navigateur incompatible.',false); return; }
+    this.setState({castBusy:true});
+    try {
+      const context=cast.framework.CastContext.getInstance();
+      let session=context.getCurrentSession();
+      if(!session) { await context.requestSession(); session=context.getCurrentSession(); }
+      if(!session) throw new Error('Session Cast indisponible');
+      let url=this.state.videoUrl;
+      if(url.indexOf('http')!==0) url=window.location.origin+url;
+      const mediaInfo=new chrome.cast.media.MediaInfo(url,'video/mp4');
+      const metadata=new chrome.cast.media.GenericMediaMetadata(); metadata.title=this.state.playingTitle||'DTS'; metadata.subtitle='DTS Universe'; mediaInfo.metadata=metadata;
+      const request=new chrome.cast.media.LoadRequest(mediaInfo); request.autoplay=true; request.currentTime=Math.max(0,this._getPlaybackTime());
+      await session.loadMedia(request);
+      this.toast('Lecture envoyée sur Chromecast.',true);
+    } catch(e){ this.toast('Connexion Chromecast annulée ou impossible.',false); }
+    this.setState({castBusy:false});
+  };
 
   toggleRemember = () => this.setState(s => ({ rememberMe: !s.rememberMe }));
 
@@ -1314,8 +1626,17 @@ class Component extends DCLogic {
   askClearHistory = () => this.setState({ confirmClear: true });
   cancelClearHistory = () => this.setState({ confirmClear: false });
   confirmClearHistory = () => this.setState({ history: [], confirmClear: false }, () => this._persistPreference('history', []));
+  removeHistoryItem = (videoId) => this.setState(st => ({history:st.history.filter(h=>h.video_id!==videoId)}),()=>this._persistPreference('history',this.state.history));
+  markHistoryWatched = (videoId) => { this._clearSavedProgress(videoId); this.setState(st=>({history:st.history.map(h=>h.video_id===videoId?Object.assign({},h,{watched:true,timestamp:Date.now()}):h)}),()=>this._persistPreference('history',this.state.history)); };
+  goHistory = () => this.setState({libTab:'history',searchQuery:''});
+  goReleases = () => this.setState({libTab:'releases',searchQuery:''});
+  goCollections = () => this.setState({libTab:'collections',searchQuery:''});
 
   openFilm = (item) => {
+    if (!item || !item.video_id) {
+      this.setState({ view: 'detail', show: item, showKind: 'film' });
+      return;
+    }
     this.playVideo(item.titre, item.video_id, 'library');
     this._recordHistory({ titre: item.titre, poster_id: item.poster_id, video_id: item.video_id, type: 'Film' });
   };
@@ -1441,6 +1762,12 @@ class Component extends DCLogic {
   onSubtitleColor = (e) => this.setState({ subtitleColor: e.target.value }, () => this._saveSubtitlePreferences(this.state));
   setSubtitleBackground = (value) => this.setState({ subtitleBackground: value }, () => this._saveSubtitlePreferences(this.state));
   setSubtitlePosition = (value) => this.setState({ subtitlePosition: value }, () => this._saveSubtitlePreferences(this.state));
+  onSubtitleFont = (e) => this.setState({subtitleFont:e.target.value},()=>this._saveSubtitlePreferences(this.state));
+  onSubtitleEdge = (e) => this.setState({subtitleEdge:e.target.value},()=>this._saveSubtitlePreferences(this.state));
+  onSubtitleOpacity = (e) => this.setState({subtitleOpacity:Math.max(0,Math.min(100,Number(e.target.value)||0))},()=>this._saveSubtitlePreferences(this.state));
+  subtitleDelayDown = () => this.setState(st=>({subtitleDelay:Math.max(-10,Math.round((st.subtitleDelay-.25)*100)/100)}),()=>this._saveSubtitlePreferences(this.state));
+  subtitleDelayUp = () => this.setState(st=>({subtitleDelay:Math.min(10,Math.round((st.subtitleDelay+.25)*100)/100)}),()=>this._saveSubtitlePreferences(this.state));
+  subtitleDelayReset = () => this.setState({subtitleDelay:0},()=>this._saveSubtitlePreferences(this.state));
 
   skipBack = () => {
     const v = this._video; if (!v) return;
@@ -1652,6 +1979,7 @@ class Component extends DCLogic {
       const v = this._video;
       if (v && v.getAttribute('src') !== url) v.src = url;
       if (v) v.play().catch(() => {});
+      if (!s.shortcutsSeen) setTimeout(() => this.setState({shortcutsHelpOpen:true}), 650);
       if (subtitleIndex >= 0 && !this._subtitleCues) this._setSubtitleTrack(String(subtitleIndex));
       else this._updateSubtitle();
     });
@@ -1892,7 +2220,7 @@ class Component extends DCLogic {
     }
     var v = this._video;
     if (!v) return;
-    var t = this._getPlaybackTime();
+    var t = this._getPlaybackTime() - (Number(this.state.subtitleDelay) || 0);
     var found = '';
     for (var i = 0; i < this._subtitleCues.length; i++) {
       var c = this._subtitleCues[i];
@@ -1906,6 +2234,10 @@ class Component extends DCLogic {
     if (el && el !== this._video) {
       this._video = el;
       el.crossOrigin = 'anonymous';
+      try { el.setAttribute('x-webkit-airplay','allow'); el.disableRemotePlayback=false; } catch(e) {}
+      el.addEventListener('webkitplaybacktargetavailabilitychanged', (ev)=>this.setState({airplayAvailable:ev.availability==='available'}));
+      el.addEventListener('enterpictureinpicture', ()=>this.setState({pipActive:true}));
+      el.addEventListener('leavepictureinpicture', ()=>this.setState({pipActive:false}));
       el.volume = this.state.volume;
       el.muted = this.state.muted;
 
@@ -2065,8 +2397,9 @@ class Component extends DCLogic {
 
   componentWillUnmount() {
     this._abortVideo(); this._stopHeroTimer(); this._cancelNextEpisodePrompt();
-    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this._handleVisibilityChange);
+    if (typeof document !== 'undefined') { document.removeEventListener('visibilitychange', this._handleVisibilityChange); document.removeEventListener('keydown', this._handleGlobalKeyDown); }
     if (typeof window !== 'undefined') window.removeEventListener('beforeunload', this._handleBeforeUnload);
+    if (this._analysisTimer) clearInterval(this._analysisTimer);
   }
 
   // ---- inputs ----
@@ -2184,11 +2517,30 @@ class Component extends DCLogic {
     return isFinite(ts) && Date.now() - ts < 30 * 24 * 3600 * 1000;
   }
 
+  _normalizeSearch(value) {
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  }
   _searchText(it, kind) {
-    return [
-      it.titre, it.synopsis, it.annee, it.langue_originale, it.certification,
+    return this._normalizeSearch([
+      it.titre, it.titre_original, it.titre_tmdb, it.alias_recherche, it.synopsis, it.annee, it.langue_originale, it.certification,
       kind === 'film' ? 'film' : kind === 'anime' ? 'anime animation manga' : 'serie séries',
-    ].concat(it.genres || [], it.acteurs || [], it.realisateurs || []).filter(Boolean).join(' ').toLowerCase();
+    ].concat(it.genres || [], it.acteurs || [], it.realisateurs || []).filter(Boolean).join(' '));
+  }
+  _levenshtein(a,b) {
+    a=this._normalizeSearch(a); b=this._normalizeSearch(b); const m=a.length,n=b.length; if(!m)return n;if(!n)return m;
+    const prev=Array.from({length:n+1},(_,i)=>i), cur=new Array(n+1);
+    for(let i=1;i<=m;i++){cur[0]=i;for(let j=1;j<=n;j++)cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));for(let j=0;j<=n;j++)prev[j]=cur[j];}
+    return prev[n];
+  }
+  _searchScore(it,kind,query) {
+    const q=this._normalizeSearch(query); if(!q)return 0;
+    const title=this._normalizeSearch(it.titre||''); const text=this._searchText(it,kind);
+    if(title===q)return 1000; if(title.startsWith(q))return 850; if(title.includes(q))return 760; if(text.includes(q))return 560;
+    const acronym=title.split(' ').filter(Boolean).map(x=>x[0]).join(''); if(acronym===q)return 900;
+    const dist=this._levenshtein(title,q); if(dist<=2)return 700-dist*50;
+    const qWords=q.split(' '), tWords=title.split(' '); let matched=0;
+    qWords.forEach(w=>{if(tWords.some(t=>t.startsWith(w)||this._levenshtein(t,w)<=1))matched++;});
+    return matched===qWords.length ? 500+matched*10 : 0;
   }
 
   _languageLabel(code) {
@@ -2211,6 +2563,8 @@ class Component extends DCLogic {
       const isNew = this._isNewItem(it);
       const quality = it.qualite || '';
       const secondaryBadge = isNew ? 'Nouveau' : quality;
+      const status = it.statut || '';
+      const statusColor = status === 'Terminé' ? '#63E6BE' : status === 'Abandonné' ? '#FF6B98' : '#FFD166';
       return Object.assign({
         titre: it.titre,
         posterUrl: url,
@@ -2220,6 +2574,7 @@ class Component extends DCLogic {
         badge: kind === 'film' ? 'Film' : (kind === 'anime' ? 'Anime' : 'Série'),
         hasBadge2: !!secondaryBadge,
         badge2: secondaryBadge,
+        hasStatus: !!status, statusLabel: status, statusColor: statusColor,
         badge2Bg: isNew ? '#E82967' : 'rgba(7,9,14,.82)',
         hasGenres: genres.length > 0,
         genres: genres.slice(0, 2),
@@ -2264,8 +2619,9 @@ class Component extends DCLogic {
     const hashOf = (str) => { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0; return h; };
     const heroPool = pool.slice().sort((a, b) => (Number(b.it.popularite) || 0) - (Number(a.it.popularite) || 0)).slice(0, 5);
     const query = (s.searchQuery || '').trim();
-    const qLower = query.toLowerCase();
-    const searchResults = query ? pool.filter(p => this._searchText(p.it, p.kind).includes(qLower)).map(p => this._mapItem(p.it, p.kind)) : [];
+    const scoredSearch = query ? pool.map(p=>({p:p,score:this._searchScore(p.it,p.kind,query)})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score) : [];
+    const searchResults = scoredSearch.map(x => this._mapItem(x.p.it, x.p.kind));
+    const searchSuggestions = scoredSearch.slice(0,5).map(x=>({title:x.p.it.titre,kind:x.p.kind==='film'?'Film':x.p.kind==='anime'?'Anime':'Série',choose:()=>this.setState({searchQuery:x.p.it.titre})}));
 
     const itemGenres = (it) => Array.isArray(it.genres) ? it.genres.filter(Boolean) : (typeof it.genre === 'string' && it.genre ? it.genre.split(/[,\/]/).map(g => g.trim()).filter(Boolean) : []);
     const allGenres = [];
@@ -2326,6 +2682,15 @@ class Component extends DCLogic {
       return { p: p, score: scoreGenres * 10 + (Number(p.it.note) || 0) + (Number(p.it.popularite) || 0) / 100 };
     }).filter(x => x.score > 0 && !watchedIds[x.p.it.video_id]).sort((a,b) => b.score - a.score).slice(0, 15).map(x => this._mapItem(x.p.it, x.p.kind));
 
+
+    const historyPageItems = s.history.map(h => {
+      const match=videoEntries.find(v=>v.video_id===h.video_id); const raw=match&&match.raw;
+      const progress=progressMap[String(h.video_id)]||{}; const time=Number(progress.time||0), duration=Number(progress.duration||0);
+      const url=(raw&&raw.poster_url)||s.posters[h.poster_id]||(raw&&raw.poster_tmdb_url)||null;
+      return {title:h.titre,type:h.type,dateLabel:new Date(h.timestamp||Date.now()).toLocaleString('fr-FR'),posterEl:this._posterEl(url,h.titre),progressLabel:h.watched?'Vu':(time>=20?'Reprendre à '+this._fmt(time):'Commencer'),progressPct:duration>0?Math.min(100,time/duration*100).toFixed(1)+'%':'0%',watched:!!h.watched,open:()=>{const e=match||{video_id:h.video_id,titre:h.titre,poster_id:h.poster_id,type:h.type,kind:h.type==='Film'?'film':h.type==='Anime'?'anime':'series',raw:raw,epPos:match&&match.epPos};this._openVideoEntry(e);},remove:()=>this.removeHistoryItem(h.video_id),mark:()=>this.markHistoryWatched(h.video_id)};
+    });
+    const releaseItems=(lib.sorties||s.plannedReleases||[]).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))).map(r=>({title:r.titre,description:r.description||'',hasDescription:!!r.description,dateLabel:(()=>{try{return new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});}catch(e){return r.date;}})(),category:r.categorie||'Sortie DTS'}));
+    const collectionSections=(lib.collections||[]).map(col=>({name:col.nom,count:String((col.items||[]).length),items:(col.items||[]).map(ref=>{const kind=ref.kind;const list=kind==='film'?lib.films:kind==='anime'?lib.anime:lib.series;const item=(list||[]).find(x=>String(x.contenu_id)===String(ref.contenu_id));return item?this._mapItem(item,kind):null;}).filter(Boolean)})).filter(c=>c.items.length>1);
     const sections = s.library ? [
       { label: 'Continuer à regarder', accent: '#E82967', glow: 'rgba(232,41,103,0.34)', items: continueItems, count: String(continueItems.length) },
       { label: 'Recommandé pour vous', accent: '#38BDF8', glow: 'rgba(56,189,248,0.28)', items: recommendations, count: String(recommendations.length) },
@@ -2433,6 +2798,7 @@ class Component extends DCLogic {
         metaLine: [it.annee, Array.isArray(it.genres) ? it.genres.slice(0,3).join(', ') : '', it.titre_original && it.titre_original !== it.titre ? ('Dossier : ' + it.titre_original) : ''].filter(Boolean).join(' • ') || 'Aucune information complémentaire',
         descriptionLabel: hasDescription ? 'Description disponible' : 'Description manquante',
         descriptionColor: hasDescription ? '#63E6BE' : '#FF9F43',
+        hasStatus:!!it.statut,status:it.statut||'',statusColor:it.statut==='Terminé'?'#63E6BE':it.statut==='Abandonné'?'#FF6B98':'#FFD166',
         edit: () => this.openMetadataEditor(it, p.kind),
       };
     });
@@ -2486,7 +2852,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v5.2-edition-infos',
+      appVersion: 'v6.0-control-center',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError,
@@ -2500,11 +2866,14 @@ class Component extends DCLogic {
       noSearch: query.length === 0,
       showHome: query.length === 0 && s.libTab === 'accueil',
       showCatalogue: query.length === 0 && s.libTab === 'catalogue',
+      showHistoryPage: query.length === 0 && s.libTab === 'history',
+      showReleasesPage: query.length === 0 && s.libTab === 'releases',
+      showCollectionsPage: query.length === 0 && s.libTab === 'collections',
       goAccueil: this.goAccueil,
       goCatalogue: this.goCatalogue,
       goFilms: this.goFilms,
       goSeries: this.goSeries,
-      goAnime: this.goAnime,
+      goAnime: this.goAnime, goHistory:this.goHistory, goReleases:this.goReleases, goCollections:this.goCollections,
       tabAccueilColor: s.libTab === 'accueil' ? '#F5F5F7' : '#9DA4B3',
       tabAccueilBorder: s.libTab === 'accueil' ? '#E82967' : 'transparent',
       tabFilmsColor: s.libTab === 'catalogue' && s.catType === 'film' ? '#F5F5F7' : '#9DA4B3',
@@ -2515,11 +2884,18 @@ class Component extends DCLogic {
       tabAnimeBorder: s.libTab === 'catalogue' && s.catType === 'anime' ? '#E82967' : 'transparent',
       tabCatalogueColor: s.libTab === 'catalogue' && s.catType === 'tous' ? '#F5F5F7' : '#9DA4B3',
       tabCatalogueBorder: s.libTab === 'catalogue' && s.catType === 'tous' ? '#7657FF' : 'transparent',
+      tabHistoryColor:s.libTab==='history'?'#F5F5F7':'#9DA4B3', tabHistoryBorder:s.libTab==='history'?'#E82967':'transparent',
+      tabReleasesColor:s.libTab==='releases'?'#F5F5F7':'#9DA4B3', tabReleasesBorder:s.libTab==='releases'?'#FFD166':'transparent',
+      tabCollectionsColor:s.libTab==='collections'?'#F5F5F7':'#9DA4B3', tabCollectionsBorder:s.libTab==='collections'?'#38BDF8':'transparent',
       mobileAccueilColor: s.libTab === 'accueil' ? '#E82967' : '#8C95A3',
       mobileFilmsColor: s.libTab === 'catalogue' && s.catType === 'film' ? '#E82967' : '#8C95A3',
       mobileSeriesColor: s.libTab === 'catalogue' && s.catType === 'series' ? '#7657FF' : '#8C95A3',
       mobileAnimeColor: s.libTab === 'catalogue' && s.catType === 'anime' ? '#E82967' : '#8C95A3',
       mobileCatalogueColor: s.libTab === 'catalogue' && s.catType === 'tous' ? '#7657FF' : '#8C95A3',
+      mobileHistoryColor: s.libTab === 'history' ? '#E82967' : '#8C95A3',
+      historyPageItems: historyPageItems.map(x=>Object.assign({},x,{resumeAction:x.watched?'Relire':'Reprendre',markLabel:x.watched?'Marqué comme vu':'Marquer comme vu'})), hasHistoryPageItems:historyPageItems.length>0,noHistoryPageItems:historyPageItems.length===0,
+      releaseItems:releaseItems,hasReleaseItems:releaseItems.length>0,noReleaseItems:releaseItems.length===0,
+      collectionSections:collectionSections.map(c=>Object.assign({},c,{items:c.items.map((item,index)=>Object.assign({},item,{orderLabel:String(index+1).padStart(2,'0'),yearLabel:item.annee||''}))})),hasCollectionSections:collectionSections.length>0,noCollectionSections:collectionSections.length===0,
       catalogueItems: catalogueItems,
       catalogueCount: String(catalogueItems.length),
       hasCatalogueItems: catalogueItems.length > 0,
@@ -2540,6 +2916,7 @@ class Component extends DCLogic {
       languageOptions: [{ value: 'Toutes les langues', label: 'Toutes les langues' }].concat(allLanguages.map(l => ({ value: l, label: this._languageLabel(l) }))), catLanguage: s.catLanguage, onCatLanguage: this.onCatLanguage,
       sortOptions: [{value:'recent',label:'Plus récents'}, {value:'rating',label:'Mieux notés'}, {value:'year',label:'Année'}, {value:'title',label:'Titre A-Z'}], catSort: s.catSort, onCatSort: this.onCatSort,
       searchResults: searchResults,
+      searchSuggestions: searchSuggestions, hasSearchSuggestions: query.length > 0 && searchSuggestions.length > 0,
       searchCount: String(searchResults.length),
       hasResults: searchResults.length > 0,
       noResults: query.length > 0 && searchResults.length === 0,
@@ -2585,11 +2962,14 @@ class Component extends DCLogic {
       detailActors: show && Array.isArray(show.acteurs) ? show.acteurs.join(', ') : '', detailHasActors: !!(show && show.acteurs && show.acteurs.length),
       detailMeta: show ? [show.annee, show.duree || show.duree_drive, show.certification, show.qualite, show.note ? ('★ ' + Number(show.note).toFixed(1)) : null].filter(Boolean).join(' • ') : '',
       detailHasMeta: !!(show && (show.annee || show.duree || show.certification || show.qualite || show.note)),
+      detailHasStatus:!!(show&&show.statut), detailStatus:show?show.statut:'', detailStatusColor:show&&show.statut==='Terminé'?'#63E6BE':show&&show.statut==='Abandonné'?'#FF6B98':'#FFD166',
       detailHasTrailer: !!(show && show.bande_annonce_url), detailTrailer: () => show && this.openTrailer(show.bande_annonce_url),
       detailPlay: this.playDetailPrimary, detailPlayLabel: s.showKind === 'film' ? 'Lire le film' : 'Commencer',
+      detailCanPlay: s.showKind === 'film' ? !!(show && show.video_id) : detailSeasons.some(season => Array.isArray(season.episodes) && season.episodes.length > 0),
+      detailCannotPlay: s.showKind === 'film' ? !(show && show.video_id) : !detailSeasons.some(season => Array.isArray(season.episodes) && season.episodes.length > 0),
       detailHasSeasons: detailSeasons.length > 0,
       videoEl: s.videoUrl ? React.createElement('video', {
-        ref: this.videoRef, src: s.videoUrl, onClick: this.togglePlay, playsInline: true, crossOrigin: 'anonymous',
+        ref: this.videoRef, src: s.videoUrl, onClick: this.togglePlay, playsInline: true, crossOrigin: 'anonymous', 'x-webkit-airplay':'allow', disableRemotePlayback:false,
         style: { width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' },
       }) : null,
       audioEl: null,
@@ -2604,7 +2984,8 @@ class Component extends DCLogic {
       hasPrevEp: !!this._epNeighbor(-1), hasNextEp: !!this._epNeighbor(1), hasEpisodePanel: playerSeasons.length > 0,
       isPaused: !s.playing, isPlaying: s.playing,
       seekDown: this.seekDown, volumeDown: this.volumeDown,
-      toggleMute: this.toggleMute, toggleFullscreen: this.toggleFullscreen,
+      toggleMute: this.toggleMute, toggleFullscreen: this.toggleFullscreen, togglePictureInPicture:this.togglePictureInPicture, pipLabel:s.pipActive?'Quitter PiP':'PiP', pipSupported:typeof document!=='undefined'&&((document.pictureInPictureEnabled)||!!(this._video&&this._video.webkitSetPresentationMode)),
+      castCurrentVideo:this.castCurrentVideo, castAvailable:s.castAvailable, castLabel:s.castBusy?'Connexion…':'Cast', showAirPlayPicker:this.showAirPlayPicker, airplayAvailable:s.airplayAvailable, openShortcutsHelp:this.openShortcutsHelp,
       wakeControls: this.wakeControls,
       audioTracks: s.audioTracks.map((t, i) => Object.assign({}, t, { label: t.title || ('Audio ' + (i + 1)) })),
       subtitleTracks: s.subtitleTracks.map((t, i) => Object.assign({}, t, {
@@ -2620,14 +3001,14 @@ class Component extends DCLogic {
       hasAudioTracks: s.audioTracks.length > 0,
       hasSubtitleTracks: s.subtitleTracks.length > 0,
       subtitleText: s.subtitleText, audioSwitching: s.audioSwitching,
-      subtitleFontSize: (28 * s.subtitleSize).toFixed(0) + 'px', subtitleColor: s.subtitleColor, subtitleBackground: s.subtitleBackground,
+      subtitleFontSize: (28 * s.subtitleSize).toFixed(0) + 'px', subtitleColor: s.subtitleColor, subtitleBackground: (()=>{const base=s.subtitleBackground==='transparent'?'0,0,0':'0,0,0';return s.subtitleBackground==='transparent'?'transparent':'rgba('+base+','+(s.subtitleOpacity/100).toFixed(2)+')';})(), subtitleFontFamily:s.subtitleFont==='serif'?'Georgia,serif':s.subtitleFont==='mono'?'Consolas,monospace':"'Barlow',sans-serif", subtitleTextShadow:s.subtitleEdge==='outline'?'-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000':s.subtitleEdge==='none'?'none':'0 2px 5px #000,0 0 8px #000',
       subtitleBottom: s.subtitlePosition === 'top' ? 'auto' : (s.subtitlePosition === 'middle' ? '44%' : '86px'), subtitleTop: s.subtitlePosition === 'top' ? '80px' : 'auto',
       subtitleTransform: s.subtitlePosition === 'middle' ? 'translate(-50%,50%)' : 'translateX(-50%)',
       playerLocked: s.playerLocked, playerUnlocked: !s.playerLocked, togglePlayerLock: this.togglePlayerLock, unlockPlayer: this.unlockPlayer,
       episodePanelOpen: s.episodePanelOpen, toggleEpisodePanel: this.toggleEpisodePanel, closeEpisodePanel: this.closeEpisodePanel, playerSeasons: playerSeasons,
       subtitleSettingsOpen: s.subtitleSettingsOpen, toggleSubtitleSettings: this.toggleSubtitleSettings,
       subtitleSizeLabel: Math.round(s.subtitleSize * 100) + '%', subtitleSizeDown: this.subtitleSizeDown, subtitleSizeUp: this.subtitleSizeUp,
-      onSubtitleColor: this.onSubtitleColor,
+      onSubtitleColor: this.onSubtitleColor, subtitleFont:s.subtitleFont,onSubtitleFont:this.onSubtitleFont,subtitleEdge:s.subtitleEdge,onSubtitleEdge:this.onSubtitleEdge,subtitleOpacity:String(s.subtitleOpacity),onSubtitleOpacity:this.onSubtitleOpacity,subtitleDelayLabel:(s.subtitleDelay>0?'+':'')+s.subtitleDelay.toFixed(2)+' s',subtitleDelayDown:this.subtitleDelayDown,subtitleDelayUp:this.subtitleDelayUp,subtitleDelayReset:this.subtitleDelayReset,
       subtitleBgOptions: [
         {label:'Aucun', bg:'transparent', select:()=>this.setSubtitleBackground('transparent')},
         {label:'Léger', bg:'rgba(0,0,0,.45)', select:()=>this.setSubtitleBackground('rgba(0,0,0,0.45)')},
@@ -2636,6 +3017,7 @@ class Component extends DCLogic {
       subtitlePositionOptions: [
         {label:'Haut', select:()=>this.setSubtitlePosition('top')}, {label:'Milieu', select:()=>this.setSubtitlePosition('middle')}, {label:'Bas', select:()=>this.setSubtitlePosition('bottom')}
       ],
+      shortcutsHelpOpen:s.shortcutsHelpOpen,openShortcutsHelp:this.openShortcutsHelp,closeShortcutsHelp:this.closeShortcutsHelp,shortcutItems:[{key:'Espace',action:'Lecture / pause'},{key:'← / →',action:'Reculer / avancer de 10 s'},{key:'F',action:'Plein écran'},{key:'M',action:'Couper le son'},{key:'S',action:'Activer / couper les sous-titres'},{key:'N',action:'Épisode suivant'},{key:'P',action:'Image dans l’image'},{key:'C',action:'Chromecast'},{key:'?',action:'Afficher cette aide'}],
       nextEpisodePrompt: s.nextEpisodePrompt, nextEpisodeCountdown: String(s.nextEpisodeCountdown), cancelAutoNext: this.cancelAutoNext, playAutoNextNow: this.playAutoNextNow,
       nextEpisodeTitle: (() => { const n=this._epNeighbor(1); if(!n || !s.show) return ''; const se=this._sortedSeasons(s.show)[n.si]; const ep=se&&se.episodes[n.ei]; return ep ? this._stripExt(ep.nom) : ''; })(),
       progressPct: pct.toFixed(2) + '%',
@@ -2658,7 +3040,9 @@ class Component extends DCLogic {
         {label:'Séries + Anime',value:String((s.dashboard.series || 0) + (s.dashboard.anime || 0)),accent:'#FFD166'},
         {label:'Épisodes',value:String(s.dashboard.episodes || 0),accent:'#63E6BE'},
         {label:'Comptes expirés',value:String(s.dashboard.comptes_expires || 0),accent:'#FF6B98'},
-        {label:'Sans description',value:String(s.dashboard.sans_description || 0),accent:'#FF9F43'}
+        {label:'Sans description',value:String(s.dashboard.sans_description || 0),accent:'#FF9F43'},
+        {label:'Sorties planifiées',value:String(s.dashboard.sorties_planifiees || 0),accent:'#FFD166'},
+        {label:'Collections',value:String(s.dashboard.collections || 0),accent:'#38BDF8'}
       ] : [],
       systemStatus: s.dashboard ? [
         {label:'Google Drive',ok:!!s.dashboard.drive,color:s.dashboard.drive?'#63E6BE':'#FF6B98',labelStatus:s.dashboard.drive?'OK':'Erreur'},
@@ -2675,8 +3059,8 @@ class Component extends DCLogic {
       metadataEditorHeading: s.editingContent ? (s.editingContent.kind === 'film' ? 'Modifier le film' : (s.editingContent.kind === 'anime' ? 'Modifier l’anime' : 'Modifier la série')) : '',
       metadataOriginalTitle: s.editingContent && s.editingContent.item ? (s.editingContent.item.titre_original || s.editingContent.item.titre || '') : '',
       metadataHasManual: !!(s.editingContent && s.editingContent.item && s.editingContent.item.metadata_manuel),
-      metadataTitle: s.metadataTitle, metadataSynopsis: s.metadataSynopsis, metadataYear: s.metadataYear, metadataDuration: s.metadataDuration, metadataGenres: s.metadataGenres, metadataCertification: s.metadataCertification, metadataNote: s.metadataNote, metadataLanguage: s.metadataLanguage, metadataActors: s.metadataActors, metadataDirectors: s.metadataDirectors, metadataPosterUrl: s.metadataPosterUrl, metadataBackdropUrl: s.metadataBackdropUrl, metadataTrailerUrl: s.metadataTrailerUrl,
-      onMetadataTitle: this.onMetadataTitle, onMetadataSynopsis: this.onMetadataSynopsis, onMetadataYear: this.onMetadataYear, onMetadataDuration: this.onMetadataDuration, onMetadataGenres: this.onMetadataGenres, onMetadataCertification: this.onMetadataCertification, onMetadataNote: this.onMetadataNote, onMetadataLanguage: this.onMetadataLanguage, onMetadataActors: this.onMetadataActors, onMetadataDirectors: this.onMetadataDirectors, onMetadataPosterUrl: this.onMetadataPosterUrl, onMetadataBackdropUrl: this.onMetadataBackdropUrl, onMetadataTrailerUrl: this.onMetadataTrailerUrl,
+      metadataTitle: s.metadataTitle, metadataSynopsis: s.metadataSynopsis, metadataYear: s.metadataYear, metadataDuration: s.metadataDuration, metadataGenres: s.metadataGenres, metadataCertification: s.metadataCertification, metadataNote: s.metadataNote, metadataLanguage: s.metadataLanguage, metadataActors: s.metadataActors, metadataDirectors: s.metadataDirectors, metadataPosterUrl: s.metadataPosterUrl, metadataBackdropUrl: s.metadataBackdropUrl, metadataTrailerUrl: s.metadataTrailerUrl, metadataStatus:s.metadataStatus,metadataNextRelease:s.metadataNextRelease,metadataSaga:s.metadataSaga,metadataSagaOrder:s.metadataSagaOrder,metadataAliases:s.metadataAliases,
+      onMetadataTitle: this.onMetadataTitle, onMetadataSynopsis: this.onMetadataSynopsis, onMetadataYear: this.onMetadataYear, onMetadataDuration: this.onMetadataDuration, onMetadataGenres: this.onMetadataGenres, onMetadataCertification: this.onMetadataCertification, onMetadataNote: this.onMetadataNote, onMetadataLanguage: this.onMetadataLanguage, onMetadataActors: this.onMetadataActors, onMetadataDirectors: this.onMetadataDirectors, onMetadataPosterUrl: this.onMetadataPosterUrl, onMetadataBackdropUrl: this.onMetadataBackdropUrl, onMetadataTrailerUrl: this.onMetadataTrailerUrl,onMetadataStatus:this.onMetadataStatus,onMetadataNextRelease:this.onMetadataNextRelease,onMetadataSaga:this.onMetadataSaga,onMetadataSagaOrder:this.onMetadataSagaOrder,onMetadataAliases:this.onMetadataAliases,
       saveContentMetadata: this.saveContentMetadata, saveContentMetadataLabel: s.savingContentMetadata ? 'Enregistrement…' : 'Enregistrer',
       resetContentMetadata: this.resetContentMetadata, resetContentMetadataLabel: s.resettingContentMetadata ? 'Restauration…' : 'Restaurer TMDB',
       closeMetadataEditor: this.closeMetadataEditor,
@@ -2687,9 +3071,14 @@ class Component extends DCLogic {
           pseudo: p, initial: p.charAt(0) || '?', expiresLabel: obj.expires_at ? ('Expire le ' + obj.expires_at) : 'Sans expiration',
           expired: !!obj.expired, statusColor: obj.expired ? '#FF6B98' : '#63E6BE', deviceLabel: String(obj.device_count || 0) + ' / ' + String(obj.max_devices || 3) + ' appareils',
           askDelete: () => this.askDelete(p), edit: () => this.startEditUser(obj), resetDevices: () => this.resetUserDevices(p), canReset: p !== 'Dzl 971' && (obj.device_count || 0) > 0,
-          isEditing: s.editingPseudo === p,
+          isEditing: s.editingPseudo === p, expanded:s.expandedDevicesPseudo===p, toggleDevices:()=>this.toggleUserDevices(p), devices:(obj.devices||[]).map(d=>({id:d.id,name:d.name||'Appareil',firstSeen:d.first_seen?new Date(d.first_seen).toLocaleString('fr-FR'):'—',lastSeen:d.last_seen?new Date(d.last_seen).toLocaleString('fr-FR'):'—',disconnect:()=>this.disconnectOneDevice(p,d.id),buttonLabel:s.disconnectingDevice===d.id?'Déconnexion…':'Déconnecter'})), noDevices:!(obj.devices||[]).length,
         };
       }),
+      newContentCategory:s.newContentCategory,newContentTitle:s.newContentTitle,newContentSynopsis:s.newContentSynopsis,newContentYear:s.newContentYear,newContentGenres:s.newContentGenres,newContentStatus:s.newContentStatus,newContentSaga:s.newContentSaga,newContentSagaOrder:s.newContentSagaOrder,newContentTrailer:s.newContentTrailer,newContentNextRelease:s.newContentNextRelease,newContentPosterName:s.newContentPosterName,
+      onNewContentCategory:this.onNewContentCategory,onNewContentTitle:this.onNewContentTitle,onNewContentSynopsis:this.onNewContentSynopsis,onNewContentYear:this.onNewContentYear,onNewContentGenres:this.onNewContentGenres,onNewContentStatus:this.onNewContentStatus,onNewContentSaga:this.onNewContentSaga,onNewContentSagaOrder:this.onNewContentSagaOrder,onNewContentTrailer:this.onNewContentTrailer,onNewContentNextRelease:this.onNewContentNextRelease,onNewContentPoster:this.onNewContentPoster,createCatalogueContent:this.createCatalogueContent,createContentLabel:s.creatingContent?'Création sur Drive…':'Créer le contenu et l’affiche',
+      plannedReleases:s.plannedReleases.map(r=>({id:r.id,title:r.titre,date:r.date,description:r.description||'',remove:()=>this.deletePlannedRelease(r.id)})),plannedReleasesCount:String(s.plannedReleases.length),releasesLoading:s.releasesLoading,releaseTitle:s.releaseTitle,releaseDate:s.releaseDate,releaseDescription:s.releaseDescription,releaseCategory:s.releaseCategory,onReleaseTitle:this.onReleaseTitle,onReleaseDate:this.onReleaseDate,onReleaseDescription:this.onReleaseDescription,onReleaseCategory:this.onReleaseCategory,addPlannedRelease:this.addPlannedRelease,releaseSaveLabel:s.savingRelease?'Ajout…':'Ajouter au calendrier',
+      analysis:s.analysis,analysisRunning:!!(s.analysis&&s.analysis.running),analysisProgress:s.analysis&&s.analysis.total?Math.round((s.analysis.progress||0)/s.analysis.total*100)+'%':'0%',analysisLabel:s.analysis&&s.analysis.running?'Analyse en cours…':'Analyser toutes les vidéos',startCatalogueAnalysis:this.startCatalogueAnalysis,analysisIssues:s.analysis&&Array.isArray(s.analysis.issues)?s.analysis.issues.map(i=>({level:i.niveau,type:i.type,title:i.titre,details:i.details,color:i.niveau==='erreur'?'#FF6B98':i.niveau==='attention'?'#FFD166':'#38BDF8'})):[],analysisClean:!!(s.analysis&&!s.analysis.running&&Array.isArray(s.analysis.issues)&&s.analysis.issues.length===0&&s.analysis.finished_at),
+      adminLogs:s.adminLogs.slice(0,100).map(l=>({date:l.date?new Date(l.date).toLocaleString('fr-FR'):'',admin:l.admin||'',action:l.action||'',details:typeof l.details==='string'?l.details:JSON.stringify(l.details||{})})),logsLoading:s.logsLoading,loadAdminLogs:this.loadAdminLogs,createBackup:this.createBackup,backupLabel:s.backupCreating?'Sauvegarde…':'Créer une sauvegarde maintenant',
       usersCount: s.users ? String(s.users.length) : '',
       newUserPseudo: s.newUserPseudo, newUserPassword: s.newUserPassword, newUserExpires: s.newUserExpires, newUserMaxDevices: s.newUserMaxDevices,
       onNewUserPseudo: this.onNewUserPseudo, onNewUserPassword: this.onNewUserPassword, onNewUserExpires: this.onNewUserExpires, onNewUserMaxDevices: this.onNewUserMaxDevices, onNewUserKey: this.onNewUserKey,

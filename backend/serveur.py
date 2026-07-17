@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Query
+from fastapi import FastAPI, HTTPException, Depends, Request, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse, FileResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -234,7 +234,8 @@ _METADATA_CACHE_TTL = int(os.environ.get("METADATA_CACHE_TTL", "30"))
 _METADATA_FIELDS = {
     "titre", "synopsis", "annee", "duree", "genres", "certification",
     "note", "langue_originale", "acteurs", "realisateurs", "poster_url",
-    "backdrop_url", "bande_annonce_url",
+    "backdrop_url", "bande_annonce_url", "statut", "prochaine_sortie",
+    "saga", "ordre_saga", "alias_recherche",
 }
 
 
@@ -288,8 +289,18 @@ def _normaliser_override_metadata(valeur: Any) -> dict:
                 "titre": 240, "synopsis": 5000, "annee": 20, "duree": 80,
                 "certification": 40, "langue_originale": 30,
                 "poster_url": 2000, "backdrop_url": 2000,
-                "bande_annonce_url": 2000,
+                "bande_annonce_url": 2000, "statut": 30, "prochaine_sortie": 40,
+                "saga": 240, "ordre_saga": 20, "alias_recherche": 500,
             }
+            if champ == "statut":
+                aliases_statut = {
+                    "en cours": "En cours", "encours": "En cours", "termine": "Terminé",
+                    "terminé": "Terminé", "fini": "Terminé", "abandonne": "Abandonné",
+                    "abandonné": "Abandonné", "auto": "Automatique", "automatique": "Automatique",
+                }
+                texte = aliases_statut.get(_retirer_accents(texte).lower().strip(), texte)
+                if texte not in {"Automatique", "En cours", "Terminé", "Abandonné"}:
+                    texte = "Automatique"
             resultat[champ] = texte[:limites.get(champ, 1000)]
     resultat["updated_at"] = str(valeur.get("updated_at") or datetime.utcnow().isoformat(timespec="seconds") + "Z")
     return resultat
@@ -343,6 +354,176 @@ def sauvegarder_metadata_catalogue(metadata: dict):
         _METADATA_CACHE["cached_at"] = time.time()
         _METADATA_CACHE["data"] = normalise
 
+
+
+
+# ==================== DONNÉES DTS SUR GOOGLE DRIVE ====================
+SORTIES_FILENAME = "sorties_dts.json"
+ADMIN_LOGS_FILENAME = "admin_logs.json"
+BACKUP_FOLDER_NAME = "Sauvegardes DTS"
+_GENERIC_JSON_CACHE: dict[str, dict[str, Any]] = {}
+_GENERIC_JSON_LOCK = threading.Lock()
+
+
+def _trouver_fichier_dans_dossier(service, parent_id: str, nom: str) -> Optional[str]:
+    nom_sure = str(nom).replace("'", "\\'")
+    resultats = service.files().list(
+        q=f"name = '{nom_sure}' and '{parent_id}' in parents and trashed = false",
+        fields="files(id,name,modifiedTime)", pageSize=10,
+    ).execute()
+    fichiers = resultats.get("files", [])
+    return fichiers[0]["id"] if fichiers else None
+
+
+def _charger_json_drive(nom: str, valeur_defaut: Any, force: bool = False) -> Any:
+    now = time.time()
+    with _GENERIC_JSON_LOCK:
+        cache = _GENERIC_JSON_CACHE.get(nom)
+        if not force and cache and now - float(cache.get("cached_at") or 0) < 30:
+            return json.loads(json.dumps(cache.get("data"), ensure_ascii=False))
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        return json.loads(json.dumps(valeur_defaut, ensure_ascii=False))
+    fichier_id = _trouver_fichier_dans_dossier(service, racine_id, nom)
+    data = valeur_defaut
+    if fichier_id:
+        try:
+            reponse = requests.get(
+                f"https://www.googleapis.com/drive/v3/files/{fichier_id}?alt=media",
+                headers={'Authorization': f'Bearer {get_access_token()}'}, timeout=20,
+            )
+            reponse.raise_for_status()
+            data = reponse.json()
+        except Exception as exc:
+            print(f"[DTS] lecture de {nom} impossible: {exc}")
+            data = valeur_defaut
+    with _GENERIC_JSON_LOCK:
+        _GENERIC_JSON_CACHE[nom] = {"cached_at": now, "data": data}
+    return json.loads(json.dumps(data, ensure_ascii=False))
+
+
+def _sauvegarder_json_drive(nom: str, data: Any) -> str:
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        raise RuntimeError("Dossier racine 'Danatrap Stream' introuvable sur Google Drive")
+    fichier_id = _trouver_fichier_dans_dossier(service, racine_id, nom)
+    contenu = json.dumps(data, indent=2, ensure_ascii=False).encode('utf-8')
+    media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype='application/json', resumable=False)
+    if fichier_id:
+        service.files().update(fileId=fichier_id, media_body=media).execute()
+    else:
+        fichier_id = service.files().create(
+            body={'name': nom, 'parents': [racine_id]}, media_body=media, fields='id'
+        ).execute().get('id')
+    with _GENERIC_JSON_LOCK:
+        _GENERIC_JSON_CACHE[nom] = {"cached_at": time.time(), "data": data}
+    return str(fichier_id or "")
+
+
+def charger_sorties(force: bool = False) -> list[dict]:
+    data = _charger_json_drive(SORTIES_FILENAME, [], force)
+    if not isinstance(data, list):
+        return []
+    resultat = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        titre = str(item.get("titre") or "").strip()[:240]
+        date = str(item.get("date") or "").strip()[:40]
+        if not titre or not date:
+            continue
+        resultat.append({
+            "id": str(item.get("id") or hashlib.sha1(f"{titre}|{date}".encode()).hexdigest()[:12]),
+            "titre": titre, "date": date,
+            "description": str(item.get("description") or "").strip()[:1500],
+            "categorie": str(item.get("categorie") or "").strip()[:30],
+            "contenu_id": str(item.get("contenu_id") or "").strip()[:200],
+            "created_at": item.get("created_at"), "updated_at": item.get("updated_at"),
+        })
+    resultat.sort(key=lambda x: x.get("date") or "")
+    return resultat
+
+
+def _journaliser_admin(admin: str, action: str, details: Any = None):
+    try:
+        logs = _charger_json_drive(ADMIN_LOGS_FILENAME, [], force=True)
+        if not isinstance(logs, list):
+            logs = []
+        logs.insert(0, {
+            "id": hashlib.sha1(f"{time.time_ns()}|{admin}|{action}".encode()).hexdigest()[:16],
+            "date": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "admin": str(admin or ADMIN_PSEUDO),
+            "action": str(action or "Action")[:240],
+            "details": details if isinstance(details, (dict, list, str, int, float, bool)) or details is None else str(details),
+        })
+        _sauvegarder_json_drive(ADMIN_LOGS_FILENAME, logs[:500])
+    except Exception as exc:
+        print(f"[DTS] journal administrateur non enregistré: {exc}")
+
+
+def _trouver_ou_creer_dossier(service, parent_id: str, nom: str) -> str:
+    existant = get_id_dossier(service, nom, parent_id)
+    if existant:
+        return existant
+    return service.files().create(
+        body={'name': nom, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [parent_id]},
+        fields='id',
+    ).execute()['id']
+
+
+def creer_sauvegarde_drive(admin: str = "SYSTEM", automatique: bool = False) -> dict:
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        raise RuntimeError("Dossier racine introuvable")
+    dossier_id = _trouver_ou_creer_dossier(service, racine_id, BACKUP_FOLDER_NAME)
+    stamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+    nom = f"sauvegarde_dts_{stamp}.json"
+    payload = {
+        "version": "6.0", "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "automatic": bool(automatique),
+        "utilisateurs": charger_utilisateurs(force=True),
+        "catalogue_metadata": charger_metadata_catalogue(force=True),
+        "sorties": charger_sorties(force=True),
+        "admin_logs": _charger_json_drive(ADMIN_LOGS_FILENAME, [], force=True),
+    }
+    media = MediaIoBaseUpload(io.BytesIO(json.dumps(payload, indent=2, ensure_ascii=False).encode('utf-8')), mimetype='application/json', resumable=False)
+    fichier = service.files().create(body={'name': nom, 'parents': [dossier_id]}, media_body=media, fields='id,name').execute()
+    if not automatique:
+        _journaliser_admin(admin, "Sauvegarde manuelle créée", {"fichier": nom})
+    return {"id": fichier.get("id"), "name": fichier.get("name"), "created_at": payload["created_at"]}
+
+
+def _assurer_sauvegarde_quotidienne():
+    try:
+        _charger_si_manquant()
+        service = build('drive', 'v3', credentials=CREDENTIALS)
+        racine_id = trouver_dossier_racine(service)
+        if not racine_id:
+            return
+        dossier_id = _trouver_ou_creer_dossier(service, racine_id, BACKUP_FOLDER_NAME)
+        prefixe = "sauvegarde_dts_" + datetime.utcnow().strftime("%Y-%m-%d")
+        resultats = service.files().list(
+            q=f"'{dossier_id}' in parents and name contains '{prefixe}' and trashed = false",
+            fields="files(id,name)", pageSize=5,
+        ).execute()
+        if not resultats.get("files"):
+            creer_sauvegarde_drive("SYSTEM", automatique=True)
+    except Exception as exc:
+        print(f"[DTS] sauvegarde quotidienne impossible: {exc}")
+
+
+def _boucle_sauvegarde_automatique():
+    # Vérifie au démarrage puis toutes les six heures qu'une sauvegarde du jour existe.
+    time.sleep(20)
+    while True:
+        _assurer_sauvegarde_quotidienne()
+        time.sleep(6 * 60 * 60)
 
 def _cle_metadata(categorie: str, contenu_id: str) -> str:
     return f"{categorie}:{contenu_id}"
@@ -490,6 +671,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+def demarrer_sauvegardes_automatiques():
+    threading.Thread(target=_boucle_sauvegarde_automatique, name="dts-backup", daemon=True).start()
+
 # ==================== ROUTES API ====================
 class LoginRequest(BaseModel):
     pseudo: str
@@ -580,6 +766,21 @@ class MiseAJourMetadataContenu(BaseModel):
     poster_url: Optional[str] = None
     backdrop_url: Optional[str] = None
     bande_annonce_url: Optional[str] = None
+    statut: Optional[str] = None
+    prochaine_sortie: Optional[str] = None
+    saga: Optional[str] = None
+    ordre_saga: Optional[str] = None
+    alias_recherche: Optional[str] = None
+
+
+class SortiePlanifiee(BaseModel):
+    titre: str
+    date: str
+    description: Optional[str] = None
+    categorie: Optional[str] = None
+    contenu_id: Optional[str] = None
+
+
 
 
 @app.post("/admin/ajouter-utilisateur")
@@ -597,6 +798,8 @@ def ajouter_utilisateur(data: NouvelUtilisateur, admin: str = Depends(verifier_a
         "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
     sauvegarder_utilisateurs(utilisateurs)
+    _journaliser_admin(admin, "Utilisateur créé", {"pseudo": pseudo, "expires_at": data.expires_at, "max_devices": data.max_devices})
+    _assurer_sauvegarde_quotidienne()
     return {"message": f"Utilisateur '{pseudo}' ajoute avec succes", "utilisateur": _fiche_publique(pseudo, utilisateurs[pseudo])}
 
 
@@ -619,6 +822,7 @@ def mettre_a_jour_utilisateur(pseudo: str, data: MiseAJourUtilisateur, admin: st
         fiche["expires_at"] = str(data.expires_at).strip() or None
     utilisateurs[pseudo] = fiche
     sauvegarder_utilisateurs(utilisateurs)
+    _journaliser_admin(admin, "Compte utilisateur modifié", {"pseudo": pseudo, "expires_at": fiche.get("expires_at"), "max_devices": fiche.get("max_devices")})
     return {"message": "Compte mis à jour", "utilisateur": _fiche_publique(pseudo, fiche)}
 
 
@@ -631,7 +835,25 @@ def deconnecter_appareils(pseudo: str, admin: str = Depends(verifier_admin)):
         raise HTTPException(status_code=400, detail="Le compte administrateur ne peut pas être déconnecté depuis cette action")
     utilisateurs[pseudo]["devices"] = {}
     sauvegarder_utilisateurs(utilisateurs)
+    _journaliser_admin(admin, "Tous les appareils déconnectés", {"pseudo": pseudo})
     return {"message": f"Tous les appareils de '{pseudo}' ont été déconnectés"}
+
+
+
+@app.delete("/admin/utilisateur/{pseudo}/appareil/{device_id}")
+def deconnecter_un_appareil(pseudo: str, device_id: str, admin: str = Depends(verifier_admin)):
+    utilisateurs = charger_utilisateurs(force=True)
+    if pseudo not in utilisateurs:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    device_id = _nettoyer_device_id(device_id)
+    devices = utilisateurs[pseudo].get("devices") or {}
+    if device_id not in devices:
+        raise HTTPException(status_code=404, detail="Appareil introuvable")
+    appareil = devices.pop(device_id)
+    utilisateurs[pseudo]["devices"] = devices
+    sauvegarder_utilisateurs(utilisateurs)
+    _journaliser_admin(admin, "Appareil déconnecté", {"pseudo": pseudo, "device_id": device_id, "name": (appareil or {}).get("name") if isinstance(appareil, dict) else ""})
+    return {"message": "Appareil déconnecté", "device_count": len(devices)}
 
 
 @app.delete("/admin/supprimer-utilisateur/{pseudo}")
@@ -643,6 +865,7 @@ def supprimer_utilisateur(pseudo: str, admin: str = Depends(verifier_admin)):
         raise HTTPException(status_code=400, detail="Impossible de supprimer le compte administrateur")
     del utilisateurs[pseudo]
     sauvegarder_utilisateurs(utilisateurs)
+    _journaliser_admin(admin, "Utilisateur supprimé", {"pseudo": pseudo})
     return {"message": f"Utilisateur '{pseudo}' supprime"}
 
 # ==================== SCANNER DRIVE ====================
@@ -674,7 +897,7 @@ def lister_contenu(service, parent_id):
     query = f"'{parent_id}' in parents and trashed = false"
     resultats = service.files().list(
         q=query,
-        fields="files(id,name,mimeType,modifiedTime,size,videoMediaMetadata(width,height,durationMillis))",
+        fields="files(id,name,mimeType,modifiedTime,size,md5Checksum,videoMediaMetadata(width,height,durationMillis))",
         pageSize=1000,
     ).execute()
     return resultats.get('files', [])
@@ -953,12 +1176,83 @@ def rechercher_tmdb(titre, type_contenu="film"):
             "bande_annonce_url": _choisir_bande_annonce(details.get("videos") or {}),
             "langue_originale": details.get("original_language"),
             "popularite": round(float(details.get("popularity", 0) or 0), 2),
+            "collection_id": ((details.get("belongs_to_collection") or {}).get("id") if type_contenu == "film" else None),
+            "collection_name": ((details.get("belongs_to_collection") or {}).get("name") if type_contenu == "film" else None),
+            "tmdb_status": details.get("status"),
+            "tmdb_total_episodes": details.get("number_of_episodes") if type_contenu != "film" else None,
         }
         cache_tmdb[cle_cache] = resultat
         return resultat
     except Exception as e:
         print(f"Erreur TMDB pour '{titre}': {e}")
         return {}
+
+
+
+def _statut_automatique(contenu: dict, categorie: str) -> str:
+    manuel = str(contenu.get("statut") or "Automatique").strip()
+    if manuel in {"En cours", "Terminé", "Abandonné"}:
+        return manuel
+    if categorie == "films":
+        return "Terminé" if contenu.get("video_id") else "En cours"
+    nb_local = sum(len(s.get("episodes") or []) for s in contenu.get("saisons") or [])
+    total = int(contenu.get("tmdb_total_episodes") or 0)
+    statut_tmdb = str(contenu.get("tmdb_status") or "").lower()
+    if statut_tmdb in {"canceled", "cancelled"}:
+        return "Abandonné"
+    if statut_tmdb in {"ended"} and nb_local > 0 and (not total or nb_local >= total):
+        return "Terminé"
+    return "En cours"
+
+
+def _finaliser_statut(contenu: dict, categorie: str) -> dict:
+    resultat = dict(contenu)
+    statut_demande = str(resultat.get("statut") or "Automatique").strip()
+    resultat["statut_auto"] = statut_demande not in {"En cours", "Terminé", "Abandonné"}
+    resultat["statut"] = _statut_automatique(resultat, categorie)
+    return resultat
+
+
+def _base_saga_titre(titre: str) -> str:
+    propre = _nettoyer_titre_tmdb(titre)
+    propre = re.sub(r"\b(?:partie|part|chapitre|chapter|volume|vol|film|movie|saison|season)\s*[0-9ivx]+\b", " ", propre, flags=re.I)
+    propre = re.sub(r"\b[0-9ivx]{1,4}\b$", " ", propre, flags=re.I)
+    propre = re.split(r"\s*[:\-–—]\s*", propre)[0]
+    return re.sub(r"\s+", " ", propre).strip()
+
+
+def _construire_collections(data: dict) -> list[dict]:
+    groupes: dict[str, dict] = {}
+    for categorie, kind in (("films", "film"), ("series", "series"), ("anime", "anime")):
+        for item in data.get(categorie, []):
+            nom = str(item.get("saga") or item.get("collection_name") or "").strip()
+            if not nom:
+                base = _base_saga_titre(item.get("titre") or "")
+                # Une collection automatique par préfixe n'est retenue que si plusieurs titres correspondent.
+                nom = base
+            cle = _normaliser_titre_comparaison(nom)
+            if len(cle) < 3:
+                continue
+            groupe = groupes.setdefault(cle, {"nom": nom, "items": [], "automatique": not bool(item.get("saga"))})
+            groupe["items"].append({
+                "categorie": categorie, "kind": kind, "contenu_id": item.get("contenu_id"),
+                "titre": item.get("titre"), "annee": item.get("annee"),
+                "ordre": item.get("ordre_saga"), "poster_id": item.get("poster_id"),
+            })
+    resultat = []
+    for groupe in groupes.values():
+        if len(groupe["items"]) < 2:
+            continue
+        def ordre(item):
+            raw = str(item.get("ordre") or "").strip()
+            try: ordre_manuel = float(raw)
+            except Exception: ordre_manuel = 999999.0
+            annee = int(re.sub(r"\D", "", str(item.get("annee") or ""))[:4] or 9999)
+            return (ordre_manuel, annee, str(item.get("titre") or "").lower())
+        groupe["items"].sort(key=ordre)
+        resultat.append(groupe)
+    resultat.sort(key=lambda g: (-len(g["items"]), str(g["nom"]).lower()))
+    return resultat[:50]
 
 
 def scanner_films(service, films_id, overrides: Optional[dict] = None):
@@ -968,7 +1262,7 @@ def scanner_films(service, films_id, overrides: Optional[dict] = None):
         if dossier['mimeType'] == 'application/vnd.google-apps.folder':
             contenu = lister_contenu(service, dossier['id'])
             video = next((f for f in contenu if f['mimeType'].startswith('video/')), None)
-            poster = next((f for f in contenu if f['name'].lower() in {'icon.jpg', 'icon.jpeg', 'icon.png', 'poster.jpg', 'poster.png'}), None)
+            poster = next((f for f in contenu if f['name'].lower() in {'icon.jpg', 'icon.jpeg', 'icon.png', 'icon.webp', 'poster.jpg', 'poster.jpeg', 'poster.png', 'poster.webp', 'icon.avif', 'poster.avif'}), None)
             infos_tmdb = rechercher_tmdb(dossier['name'], "film")
             contenu = {
                 "titre": dossier['name'],
@@ -981,7 +1275,7 @@ def scanner_films(service, films_id, overrides: Optional[dict] = None):
                 "duree_drive": _duree_drive(video),
                 **infos_tmdb
             }
-            films.append(_appliquer_metadata_manuelle(contenu, "films", dossier['id'], overrides))
+            films.append(_finaliser_statut(_appliquer_metadata_manuelle(contenu, "films", dossier['id'], overrides), "films"))
     films.sort(key=lambda f: f.get("date_ajout") or "", reverse=True)
     return films
 
@@ -992,7 +1286,7 @@ def scanner_series(service, series_id, categorie: str = "series", overrides: Opt
     for dossier_serie in lister_contenu(service, series_id):
         if dossier_serie['mimeType'] == 'application/vnd.google-apps.folder':
             contenu_serie = lister_contenu(service, dossier_serie['id'])
-            poster = next((f for f in contenu_serie if f['name'].lower() in {'icon.jpg', 'icon.jpeg', 'icon.png', 'poster.jpg', 'poster.png'}), None)
+            poster = next((f for f in contenu_serie if f['name'].lower() in {'icon.jpg', 'icon.jpeg', 'icon.png', 'icon.webp', 'poster.jpg', 'poster.jpeg', 'poster.png', 'poster.webp', 'icon.avif', 'poster.avif'}), None)
             saisons = []
             for dossier_saison in contenu_serie:
                 if dossier_saison['mimeType'] == 'application/vnd.google-apps.folder':
@@ -1007,7 +1301,9 @@ def scanner_series(service, series_id, categorie: str = "series", overrides: Opt
                         }
                         for ep in episodes_bruts if ep['mimeType'].startswith('video/')
                     ]
+                    episodes.sort(key=lambda ep: [int(x) for x in re.findall(r"\d+", ep.get("nom") or "")[:2]] or [0])
                     saisons.append({"nom_saison": dossier_saison['name'], "episodes": episodes, "date_ajout": dossier_saison.get("modifiedTime")})
+            saisons.sort(key=lambda sa: int((re.findall(r"\d+", sa.get("nom_saison") or "0") or [0])[0]))
             infos_tmdb = rechercher_tmdb(dossier_serie['name'], "tv")
             contenu = {
                 "titre": dossier_serie['name'],
@@ -1017,7 +1313,7 @@ def scanner_series(service, series_id, categorie: str = "series", overrides: Opt
                 "saisons": saisons,
                 **infos_tmdb
             }
-            series.append(_appliquer_metadata_manuelle(contenu, categorie, dossier_serie['id'], overrides))
+            series.append(_finaliser_statut(_appliquer_metadata_manuelle(contenu, categorie, dossier_serie['id'], overrides), categorie))
     series.sort(key=lambda f: f.get("date_ajout") or "", reverse=True)
     return series
 
@@ -1045,8 +1341,10 @@ def _scanner_bibliotheque(force: bool = False) -> dict:
         "films": scanner_films(service, films_id, overrides) if films_id else [],
         "series": scanner_series(service, series_id, "series", overrides) if series_id else [],
         "anime": scanner_series(service, anime_id, "anime", overrides) if anime_id else [],
+        "sorties": charger_sorties(),
         "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
+    data["collections"] = _construire_collections(data)
     with _LIBRARY_CACHE_LOCK:
         _LIBRARY_CACHE["cached_at"] = now
         _LIBRARY_CACHE["data"] = data
@@ -1071,6 +1369,8 @@ def rafraichir_bibliotheque(admin: str = Depends(verifier_admin)):
     cache_tmdb.clear()
     # Les modifications manuelles restent intactes et sont réappliquées après TMDB.
     data = _scanner_bibliotheque(force=True)
+    _journaliser_admin(admin, "Catalogue actualisé", {"generated_at": data.get("generated_at")})
+    _assurer_sauvegarde_quotidienne()
     return {"message": "Bibliothèque actualisée", "generated_at": data.get("generated_at")}
 
 
@@ -1121,6 +1421,8 @@ def modifier_metadata_contenu(
     metadata[_cle_metadata(categorie, contenu_id)] = override
     sauvegarder_metadata_catalogue(metadata)
     _invalider_cache_bibliotheque()
+    _journaliser_admin(admin, "Informations de contenu modifiées", {"categorie": categorie, "contenu_id": contenu_id, "titre": override.get("titre")})
+    _assurer_sauvegarde_quotidienne()
     return {
         "message": "Informations du contenu enregistrées",
         "categorie": categorie,
@@ -1143,10 +1445,225 @@ def reinitialiser_metadata_contenu(
         del metadata[cle]
         sauvegarder_metadata_catalogue(metadata)
     _invalider_cache_bibliotheque()
+    if existait:
+        _journaliser_admin(admin, "Informations automatiques restaurées", {"categorie": categorie, "contenu_id": contenu_id})
     return {
         "message": "Informations automatiques restaurées" if existait else "Aucune modification manuelle à supprimer",
         "removed": existait,
     }
+
+
+
+@app.get("/sorties")
+def liste_sorties_publiques(utilisateur: dict = Depends(verifier_token)):
+    return {"sorties": charger_sorties()}
+
+
+@app.get("/admin/sorties")
+def liste_sorties_admin(admin: str = Depends(verifier_admin)):
+    return {"sorties": charger_sorties(force=True)}
+
+
+@app.post("/admin/sorties")
+def ajouter_sortie(data: SortiePlanifiee, admin: str = Depends(verifier_admin)):
+    titre = data.titre.strip()
+    date = data.date.strip()
+    if not titre or not date:
+        raise HTTPException(status_code=400, detail="Titre et date obligatoires")
+    sorties = charger_sorties(force=True)
+    maintenant = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    item = {
+        "id": hashlib.sha1(f"{time.time_ns()}|{titre}|{date}".encode()).hexdigest()[:12],
+        "titre": titre[:240], "date": date[:40],
+        "description": str(data.description or "").strip()[:1500],
+        "categorie": str(data.categorie or "").strip()[:30],
+        "contenu_id": str(data.contenu_id or "").strip()[:200],
+        "created_at": maintenant, "updated_at": maintenant,
+    }
+    sorties.append(item)
+    sorties.sort(key=lambda x: x.get("date") or "")
+    _sauvegarder_json_drive(SORTIES_FILENAME, sorties)
+    _invalider_cache_bibliotheque()
+    _journaliser_admin(admin, "Sortie planifiée", {"titre": titre, "date": date})
+    return {"message": "Sortie ajoutée", "sortie": item}
+
+
+@app.delete("/admin/sorties/{sortie_id}")
+def supprimer_sortie(sortie_id: str, admin: str = Depends(verifier_admin)):
+    sorties = charger_sorties(force=True)
+    apres = [item for item in sorties if str(item.get("id")) != str(sortie_id)]
+    if len(apres) == len(sorties):
+        raise HTTPException(status_code=404, detail="Sortie introuvable")
+    _sauvegarder_json_drive(SORTIES_FILENAME, apres)
+    _invalider_cache_bibliotheque()
+    _journaliser_admin(admin, "Sortie planifiée supprimée", {"id": sortie_id})
+    return {"message": "Sortie supprimée"}
+
+
+@app.get("/admin/journal")
+def journal_admin(admin: str = Depends(verifier_admin)):
+    logs = _charger_json_drive(ADMIN_LOGS_FILENAME, [], force=True)
+    return {"logs": logs[:500] if isinstance(logs, list) else []}
+
+
+@app.post("/admin/sauvegarde")
+def sauvegarde_admin(admin: str = Depends(verifier_admin)):
+    return {"message": "Sauvegarde créée", "backup": creer_sauvegarde_drive(admin, automatique=False)}
+
+
+_ALLOWED_POSTER_MIME = {"image/jpeg", "image/png", "image/webp", "image/avif"}
+_ALLOWED_POSTER_EXT = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
+
+
+@app.post("/admin/catalogue/creer")
+async def creer_contenu_catalogue(
+    categorie: str = Form(...),
+    titre: str = Form(...),
+    synopsis: str = Form(""),
+    annee: str = Form(""),
+    genres: str = Form(""),
+    statut: str = Form("Automatique"),
+    saga: str = Form(""),
+    ordre_saga: str = Form(""),
+    bande_annonce_url: str = Form(""),
+    prochaine_sortie: str = Form(""),
+    poster: Optional[UploadFile] = File(None),
+    admin: str = Depends(verifier_admin),
+):
+    categorie = _categorie_catalogue_valide(categorie)
+    titre = str(titre or "").strip()
+    if not titre:
+        raise HTTPException(status_code=400, detail="Le titre est obligatoire")
+    _charger_si_manquant()
+    service = build('drive', 'v3', credentials=CREDENTIALS)
+    racine_id = trouver_dossier_racine(service)
+    if not racine_id:
+        raise HTTPException(status_code=404, detail="Dossier racine 'Danatrap Stream' introuvable sur Google Drive")
+    noms = {"films": ["Films", "FILMS"], "series": ["Séries", "Series"], "anime": ["Animes", "Anime"]}[categorie]
+    parent_id = trouver_dossier_flexible(service, noms, racine_id)
+    if not parent_id:
+        parent_id = _trouver_ou_creer_dossier(service, racine_id, noms[0])
+    # Refuse un doublon exact dans la même catégorie.
+    existants = lister_contenu(service, parent_id)
+    if any(normaliser_nom(f.get("name") or "") == normaliser_nom(titre) and f.get("mimeType") == 'application/vnd.google-apps.folder' for f in existants):
+        raise HTTPException(status_code=409, detail="Un dossier portant ce titre existe déjà dans cette catégorie")
+    dossier_id = service.files().create(
+        body={'name': titre, 'mimeType': 'application/vnd.google-apps.folder', 'parents': [parent_id]}, fields='id'
+    ).execute()['id']
+    if categorie in {"series", "anime"}:
+        _trouver_ou_creer_dossier(service, dossier_id, "Saison 1")
+    poster_id = None
+    if poster and poster.filename:
+        ext = pathlib.Path(poster.filename).suffix.lower()
+        mime = str(poster.content_type or "").lower()
+        if ext not in _ALLOWED_POSTER_EXT or mime not in _ALLOWED_POSTER_MIME:
+            raise HTTPException(status_code=400, detail="Affiche invalide. Utilise PNG, JPG, WEBP ou AVIF.")
+        contenu = await poster.read()
+        if len(contenu) > 15 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="L'affiche dépasse 15 Mo")
+        media = MediaIoBaseUpload(io.BytesIO(contenu), mimetype=mime, resumable=False)
+        poster_id = service.files().create(
+            body={'name': 'icon' + ext, 'parents': [dossier_id]}, media_body=media, fields='id'
+        ).execute().get('id')
+    infos_tmdb = rechercher_tmdb(titre, "film" if categorie == "films" else "tv")
+    override_data = {
+        "titre": titre,
+        "synopsis": str(synopsis or "").strip() or str(infos_tmdb.get("synopsis") or ""),
+        "annee": str(annee or "").strip() or str(infos_tmdb.get("annee") or ""),
+        "genres": _normaliser_liste_metadata(genres) or infos_tmdb.get("genres") or [],
+        "statut": statut or "Automatique", "saga": saga, "ordre_saga": ordre_saga,
+        "bande_annonce_url": _valider_url_metadata(bande_annonce_url, "bande_annonce_url"),
+        "prochaine_sortie": prochaine_sortie,
+        "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+    metadata = charger_metadata_catalogue(force=True)
+    metadata[_cle_metadata(categorie, dossier_id)] = _normaliser_override_metadata(override_data)
+    sauvegarder_metadata_catalogue(metadata)
+    _invalider_cache_bibliotheque()
+    _journaliser_admin(admin, "Contenu créé", {"categorie": categorie, "titre": titre, "dossier_id": dossier_id, "poster_id": poster_id})
+    _assurer_sauvegarde_quotidienne()
+    return {"message": "Contenu créé dans Google Drive", "categorie": categorie, "contenu_id": dossier_id, "poster_id": poster_id}
+
+
+_ANALYSE_LOCK = threading.Lock()
+_ANALYSE_JOB: dict[str, Any] = {"running": False, "progress": 0, "total": 0, "issues": [], "started_at": None, "finished_at": None}
+
+
+def _ajouter_anomalie(issues: list, niveau: str, type_anomalie: str, titre: str, details: str, video_id: Optional[str] = None):
+    issues.append({"niveau": niveau, "type": type_anomalie, "titre": titre, "details": details, "video_id": video_id})
+
+
+def _executer_analyse_catalogue(profonde: bool = True):
+    global _ANALYSE_JOB
+    try:
+        bibliotheque = _scanner_bibliotheque(force=True)
+        videos = []
+        issues = []
+        vus_titres: dict[str, str] = {}
+        for categorie in ("films", "series", "anime"):
+            for item in bibliotheque.get(categorie, []):
+                titre = str(item.get("titre") or "Sans titre")
+                cle = _normaliser_titre_comparaison(titre)
+                if cle in vus_titres:
+                    _ajouter_anomalie(issues, "attention", "doublon", titre, f"Titre proche de « {vus_titres[cle]} »")
+                else:
+                    vus_titres[cle] = titre
+                if not item.get("poster_id") and not item.get("poster_url") and not item.get("poster_tmdb_url"):
+                    _ajouter_anomalie(issues, "attention", "affiche", titre, "Aucune affiche détectée")
+                if not str(item.get("synopsis") or "").strip():
+                    _ajouter_anomalie(issues, "attention", "description", titre, "Description absente")
+                if categorie == "films":
+                    if not item.get("video_id"):
+                        _ajouter_anomalie(issues, "erreur", "video_absente", titre, "Aucun fichier vidéo dans le dossier")
+                    else:
+                        videos.append((titre, item.get("video_id"), item.get("duree_drive")))
+                else:
+                    eps = [ep for saison in item.get("saisons") or [] for ep in saison.get("episodes") or []]
+                    if not eps:
+                        _ajouter_anomalie(issues, "attention", "episodes", titre, "Aucun épisode importé")
+                    for ep in eps:
+                        videos.append((titre + " — " + str(ep.get("nom") or "Épisode"), ep.get("video_id"), ep.get("duree")))
+        with _ANALYSE_LOCK:
+            _ANALYSE_JOB.update({"total": len(videos), "issues": issues, "progress": 0})
+        if profonde and shutil.which("ffprobe"):
+            for index, (titre, video_id, duree_drive) in enumerate(videos):
+                try:
+                    info = _probe_media(str(video_id), force=False)
+                    if not info.get("audio"):
+                        _ajouter_anomalie(issues, "erreur", "audio", titre, "Aucune piste audio détectée", video_id)
+                    if float(info.get("duration") or 0) <= 1:
+                        _ajouter_anomalie(issues, "erreur", "duree", titre, "Durée vidéo invalide", video_id)
+                    for sub in info.get("subtitles") or []:
+                        if sub.get("codec") in _IMAGE_SUBTITLE_CODECS:
+                            _ajouter_anomalie(issues, "info", "sous_titre_image", titre, f"Sous-titre {sub.get('title')} en image, non affichable dans le lecteur web", video_id)
+                except Exception as exc:
+                    _ajouter_anomalie(issues, "erreur", "inaccessible", titre, str(exc)[:500], video_id)
+                with _ANALYSE_LOCK:
+                    _ANALYSE_JOB["progress"] = index + 1
+                    _ANALYSE_JOB["issues"] = list(issues)
+        with _ANALYSE_LOCK:
+            _ANALYSE_JOB.update({"running": False, "issues": issues, "progress": len(videos), "finished_at": datetime.utcnow().isoformat(timespec="seconds") + "Z"})
+    except Exception as exc:
+        with _ANALYSE_LOCK:
+            _ANALYSE_JOB.update({"running": False, "error": str(exc), "finished_at": datetime.utcnow().isoformat(timespec="seconds") + "Z"})
+
+
+@app.post("/admin/analyse-catalogue")
+def lancer_analyse_catalogue(profonde: bool = Query(True), admin: str = Depends(verifier_admin)):
+    global _ANALYSE_JOB
+    with _ANALYSE_LOCK:
+        if _ANALYSE_JOB.get("running"):
+            return dict(_ANALYSE_JOB)
+        _ANALYSE_JOB = {"running": True, "progress": 0, "total": 0, "issues": [], "started_at": datetime.utcnow().isoformat(timespec="seconds") + "Z", "finished_at": None, "error": None}
+    threading.Thread(target=_executer_analyse_catalogue, args=(profonde,), daemon=True).start()
+    _journaliser_admin(admin, "Analyse du catalogue lancée", {"profonde": profonde})
+    return dict(_ANALYSE_JOB)
+
+
+@app.get("/admin/analyse-catalogue")
+def statut_analyse_catalogue(admin: str = Depends(verifier_admin)):
+    with _ANALYSE_LOCK:
+        return json.loads(json.dumps(_ANALYSE_JOB, ensure_ascii=False))
 
 
 @app.get("/admin/dashboard")
@@ -1174,6 +1691,11 @@ def dashboard_admin(admin: str = Depends(verifier_admin)):
         ),
         "cache_pistes": len(_TRACKS_CACHE) if "_TRACKS_CACHE" in globals() else 0,
         "bibliotheque_generee": bibliotheque.get("generated_at"),
+        "sorties_planifiees": len(bibliotheque.get("sorties") or []),
+        "collections": len(bibliotheque.get("collections") or []),
+        "en_cours": sum(1 for c in ("films", "series", "anime") for i in bibliotheque.get(c, []) if i.get("statut") == "En cours"),
+        "termines": sum(1 for c in ("films", "series", "anime") for i in bibliotheque.get(c, []) if i.get("statut") == "Terminé"),
+        "abandonnes": sum(1 for c in ("films", "series", "anime") for i in bibliotheque.get(c, []) if i.get("statut") == "Abandonné"),
     }
 
 
