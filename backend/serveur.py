@@ -2215,8 +2215,6 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
                 "-reconnect_on_http_error", "429,500,502,503,504",
                 "-reconnect_streamed", "1",
                 "-reconnect_delay_max", "8",
-                "-reconnect_max_retries", "5",
-                "-reconnect_delay_total_max", "45",
                 "-v", "error",
                 "-show_entries",
                 "format=start_time,duration:stream=index,codec_name,codec_long_name,profile,codec_type,width,height,sample_rate,channels,channel_layout,bit_rate,start_time,duration:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
