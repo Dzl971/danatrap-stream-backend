@@ -70,6 +70,11 @@ AUDIO_CACHE_PARENT_FOLDER = "Cache DTS"
 AUDIO_CACHE_FOLDER_NAME = "Audio compatible"
 AUDIO_CACHE_BITRATE = str(os.environ.get("AUDIO_CACHE_BITRATE", "160k")).strip() or "160k"
 AUTO_AUDIO_PREPARE = str(os.environ.get("AUTO_AUDIO_PREPARE", "1")).strip().lower() not in {"0", "false", "non", "no"}
+# Analyse distante plus tolérante : les gros MKV/MP4 de Drive peuvent être lents
+# ou temporairement limités (HTTP 429/5xx).
+AUDIO_PROBE_TIMEOUT = max(90, int(os.environ.get("AUDIO_PROBE_TIMEOUT", "240")))
+AUDIO_PROBE_RETRIES = max(1, min(5, int(os.environ.get("AUDIO_PROBE_RETRIES", "3"))))
+AUDIO_PROBE_RETRY_DELAY = max(1.0, float(os.environ.get("AUDIO_PROBE_RETRY_DELAY", "4")))
 AUDIO_CACHE_LOCAL_DIR = pathlib.Path(tempfile.gettempdir()) / "dts_audio_compatible"
 AUDIO_CACHE_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
 _AUDIO_MAPPING_LOCK = threading.Lock()
@@ -2140,6 +2145,14 @@ def _audio_universal_codec_args(filter_chain: Optional[str] = None) -> list[str]
 _TRACKS_CACHE: dict[str, dict] = {}
 _TRACKS_CACHE_TTL = int(os.environ.get("TRACKS_CACHE_TTL", "3600"))
 _TRACKS_CACHE_LOCK = threading.Lock()
+_MEDIA_PROBE_LOCKS: dict[str, threading.Lock] = {}
+_MEDIA_PROBE_LOCKS_GUARD = threading.Lock()
+
+
+def _media_probe_lock(video_id: str) -> threading.Lock:
+    """Évite deux analyses ffprobe simultanées du même fichier Drive."""
+    with _MEDIA_PROBE_LOCKS_GUARD:
+        return _MEDIA_PROBE_LOCKS.setdefault(str(video_id), threading.Lock())
 
 
 def _normaliser_langue(tags: dict) -> str:
@@ -2169,110 +2182,153 @@ def _format_track_label(tags: dict, stream_type: str, index: int) -> str:
 
 
 def _probe_media(video_id: str, force: bool = False) -> dict:
-    """Analyse une seule fois les flux audio/sous-titres du média distant."""
+    """Analyse les flux d'un média Drive avec reprise automatique.
+
+    Google Drive peut répondre temporairement en 429/5xx, et certains gros
+    conteneurs mettent plus de 75 secondes à exposer leurs pistes. Le probe est
+    donc verrouillé par fichier, retenté et doté d'un délai plus réaliste.
+    """
     now = time.time()
     with _TRACKS_CACHE_LOCK:
         cached = _TRACKS_CACHE.get(video_id)
         if not force and cached and now - cached["cached_at"] < _TRACKS_CACHE_TTL:
             return cached["data"]
 
-    cmd = [
-        "ffprobe",
-        "-headers", _get_drive_auth_header(),
-        "-v", "error",
-        "-show_entries",
-        "format=start_time,duration:stream=index,codec_name,codec_long_name,profile,codec_type,width,height,sample_rate,channels,channel_layout,bit_rate,start_time,duration:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
-        "-of", "json",
-        _get_drive_media_url(video_id),
-    ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=75)
-    except FileNotFoundError as exc:
-        raise RuntimeError("ffprobe n'est pas installé sur le serveur Render") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("L'analyse des pistes a dépassé 75 secondes") from exc
+    lock = _media_probe_lock(video_id)
+    with lock:
+        # Une autre requête a peut-être terminé pendant l'attente du verrou.
+        now = time.time()
+        with _TRACKS_CACHE_LOCK:
+            cached = _TRACKS_CACHE.get(video_id)
+            if not force and cached and now - cached["cached_at"] < _TRACKS_CACHE_TTL:
+                return cached["data"]
 
-    if result.returncode != 0:
-        detail = (result.stderr or "Erreur ffprobe inconnue").strip()[-1200:]
-        raise RuntimeError(f"ffprobe a échoué: {detail}")
+        last_error = ""
+        result = None
+        for attempt in range(1, AUDIO_PROBE_RETRIES + 1):
+            cmd = [
+                "ffprobe",
+                "-headers", _get_drive_auth_header(),
+                "-rw_timeout", "60000000",
+                "-reconnect", "1",
+                "-reconnect_on_network_error", "1",
+                "-reconnect_on_http_error", "429,500,502,503,504",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "8",
+                "-reconnect_max_retries", "5",
+                "-reconnect_delay_total_max", "45",
+                "-v", "error",
+                "-show_entries",
+                "format=start_time,duration:stream=index,codec_name,codec_long_name,profile,codec_type,width,height,sample_rate,channels,channel_layout,bit_rate,start_time,duration:stream_disposition=default,attached_pic:stream_tags=language,title,handler_name",
+                "-of", "json",
+                _get_drive_media_url(video_id),
+            ]
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True,
+                    timeout=AUDIO_PROBE_TIMEOUT,
+                )
+            except FileNotFoundError as exc:
+                raise RuntimeError("ffprobe n'est pas installé sur le serveur Render") from exc
+            except subprocess.TimeoutExpired:
+                last_error = f"L'analyse des pistes a dépassé {AUDIO_PROBE_TIMEOUT} secondes"
+                result = None
+            else:
+                if result.returncode == 0:
+                    break
+                last_error = (result.stderr or "Erreur ffprobe inconnue").strip()[-1200:]
 
-    try:
-        probe_data = json.loads(result.stdout or "{}")
-        streams = probe_data.get("streams", [])
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("Réponse ffprobe invalide") from exc
+            if attempt < AUDIO_PROBE_RETRIES:
+                # Le jeton peut expirer pendant une longue campagne d'analyse.
+                try:
+                    if CREDENTIALS is not None and (not CREDENTIALS.valid or CREDENTIALS.expired):
+                        CREDENTIALS.refresh(GoogleRequest())
+                except Exception:
+                    pass
+                time.sleep(AUDIO_PROBE_RETRY_DELAY * attempt)
 
-    video_streams = [
-        s for s in streams
-        if s.get("codec_type") == "video"
-        and not bool((s.get("disposition") or {}).get("attached_pic", 0))
-    ]
-    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
-    subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
+        if result is None or result.returncode != 0:
+            message = last_error or "Erreur ffprobe inconnue"
+            if "4XX Client Error" in message or "429" in message:
+                message = "Google Drive a temporairement limité l'accès au fichier (HTTP 429/4XX). Réessaie dans quelques minutes. Détail : " + message
+            raise RuntimeError(f"ffprobe a échoué après {AUDIO_PROBE_RETRIES} tentative(s): {message}")
 
-    audio = []
-    for i, stream in enumerate(audio_streams):
-        tags = stream.get("tags") or {}
-        audio.append({
-            "index": i,
-            "stream_index": stream.get("index"),
-            "language": _normaliser_langue(tags),
-            "title": _format_track_label(tags, "audio", i),
-            "codec": stream.get("codec_name", ""),
-            "codec_long_name": stream.get("codec_long_name", ""),
-            "profile": stream.get("profile", ""),
-            "sample_rate": _safe_int(stream.get("sample_rate")),
-            "channels": _safe_int(stream.get("channels")),
-            "channel_layout": stream.get("channel_layout", ""),
-            "bit_rate": _safe_int(stream.get("bit_rate")),
-            "start_time": _safe_float(stream.get("start_time")),
-            "stream_duration": _safe_float(stream.get("duration")),
-            "default": bool((stream.get("disposition") or {}).get("default", 0)),
-        })
+        try:
+            probe_data = json.loads(result.stdout or "{}")
+            streams = probe_data.get("streams", [])
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Réponse ffprobe invalide") from exc
 
-    subtitles = []
-    for i, stream in enumerate(subtitle_streams):
-        tags = stream.get("tags") or {}
-        subtitles.append({
-            "index": i,
-            "stream_index": stream.get("index"),
-            "language": _normaliser_langue(tags),
-            "title": _format_track_label(tags, "subtitle", i),
-            "codec": stream.get("codec_name", ""),
-            "default": bool((stream.get("disposition") or {}).get("default", 0)),
-        })
+        video_streams = [
+            s for s in streams
+            if s.get("codec_type") == "video"
+            and not bool((s.get("disposition") or {}).get("attached_pic", 0))
+        ]
+        audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+        subtitle_streams = [s for s in streams if s.get("codec_type") == "subtitle"]
 
-    duration_raw = (probe_data.get("format") or {}).get("duration")
-    try:
-        duration = max(0.0, float(duration_raw))
-    except (TypeError, ValueError):
-        duration = 0.0
+        audio = []
+        for i, stream in enumerate(audio_streams):
+            tags = stream.get("tags") or {}
+            audio.append({
+                "index": i,
+                "stream_index": stream.get("index"),
+                "language": _normaliser_langue(tags),
+                "title": _format_track_label(tags, "audio", i),
+                "codec": stream.get("codec_name", ""),
+                "codec_long_name": stream.get("codec_long_name", ""),
+                "profile": stream.get("profile", ""),
+                "sample_rate": _safe_int(stream.get("sample_rate")),
+                "channels": _safe_int(stream.get("channels")),
+                "channel_layout": stream.get("channel_layout", ""),
+                "bit_rate": _safe_int(stream.get("bit_rate")),
+                "start_time": _safe_float(stream.get("start_time")),
+                "stream_duration": _safe_float(stream.get("duration")),
+                "default": bool((stream.get("disposition") or {}).get("default", 0)),
+            })
 
-    primary_video = video_streams[0] if video_streams else {}
-    try:
-        largeur = int(primary_video.get("width") or 0)
-        hauteur = int(primary_video.get("height") or 0)
-    except (TypeError, ValueError):
-        largeur, hauteur = 0, 0
-    qualite = "4K" if hauteur >= 2160 else "1440p" if hauteur >= 1440 else "1080p" if hauteur >= 1080 else "720p" if hauteur >= 720 else "480p" if hauteur >= 480 else None
-    format_start_time = _safe_float((probe_data.get("format") or {}).get("start_time"), 0.0)
-    video_start_time = _safe_float(primary_video.get("start_time"), format_start_time)
-    data = {
-        "audio": audio,
-        "subtitles": subtitles,
-        "duration": duration,
-        "format_start_time": format_start_time,
-        "video_start_time": video_start_time,
-        "video_stream_index": primary_video.get("index"),
-        "video_codec": primary_video.get("codec_name", ""),
-        "width": largeur,
-        "height": hauteur,
-        "quality": qualite,
-    }
-    with _TRACKS_CACHE_LOCK:
-        _TRACKS_CACHE[video_id] = {"cached_at": now, "data": data}
-    return data
+        subtitles = []
+        for i, stream in enumerate(subtitle_streams):
+            tags = stream.get("tags") or {}
+            subtitles.append({
+                "index": i,
+                "stream_index": stream.get("index"),
+                "language": _normaliser_langue(tags),
+                "title": _format_track_label(tags, "subtitle", i),
+                "codec": stream.get("codec_name", ""),
+                "default": bool((stream.get("disposition") or {}).get("default", 0)),
+            })
 
+        duration_raw = (probe_data.get("format") or {}).get("duration")
+        try:
+            duration = max(0.0, float(duration_raw))
+        except (TypeError, ValueError):
+            duration = 0.0
+
+        primary_video = video_streams[0] if video_streams else {}
+        try:
+            largeur = int(primary_video.get("width") or 0)
+            hauteur = int(primary_video.get("height") or 0)
+        except (TypeError, ValueError):
+            largeur, hauteur = 0, 0
+        qualite = "4K" if hauteur >= 2160 else "1440p" if hauteur >= 1440 else "1080p" if hauteur >= 1080 else "720p" if hauteur >= 720 else "480p" if hauteur >= 480 else None
+        format_start_time = _safe_float((probe_data.get("format") or {}).get("start_time"), 0.0)
+        video_start_time = _safe_float(primary_video.get("start_time"), format_start_time)
+        data = {
+            "audio": audio,
+            "subtitles": subtitles,
+            "duration": duration,
+            "format_start_time": format_start_time,
+            "video_start_time": video_start_time,
+            "video_stream_index": primary_video.get("index"),
+            "video_codec": primary_video.get("codec_name", ""),
+            "width": largeur,
+            "height": hauteur,
+            "quality": qualite,
+        }
+        with _TRACKS_CACHE_LOCK:
+            _TRACKS_CACHE[video_id] = {"cached_at": now, "data": data}
+        return data
 
 def _enumerer_videos_audio(bibliotheque: Optional[dict] = None) -> list[dict]:
     bibliotheque = bibliotheque if isinstance(bibliotheque, dict) else _scanner_bibliotheque()
@@ -2432,13 +2488,15 @@ def _audio_job_snapshot() -> dict:
         return json.loads(json.dumps(_AUDIO_PREPARE_JOB, ensure_ascii=False))
 
 
-def _executer_preparation_audio(force: bool = False, admin: str = "SYSTEM") -> None:
+def _executer_preparation_audio(force: bool = False, admin: str = "SYSTEM", target_video_ids: Optional[set[str]] = None) -> None:
     global _AUDIO_PREPARE_JOB
     try:
         with _AUDIO_PREPARE_LOCK:
             _AUDIO_PREPARE_JOB.update({"phase": "analyse", "current": "Analyse du catalogue…"})
         bibliotheque = _scanner_bibliotheque(force=False)
         videos = _enumerer_videos_audio(bibliotheque)
+        if target_video_ids:
+            videos = [v for v in videos if str(v.get("video_id")) in target_video_ids]
         items = []
         pending_tasks = []
         direct = prepared = errors = tracks_total = 0
@@ -2518,20 +2576,33 @@ def _executer_preparation_audio(force: bool = False, admin: str = "SYSTEM") -> N
             })
 
 
-def _demarrer_preparation_audio(admin: str = "SYSTEM", force: bool = False) -> dict:
+def _demarrer_preparation_audio(admin: str = "SYSTEM", force: bool = False, retry_errors: bool = False) -> dict:
     global _AUDIO_PREPARE_JOB
     with _AUDIO_PREPARE_LOCK:
         if _AUDIO_PREPARE_JOB.get("running"):
             return json.loads(json.dumps(_AUDIO_PREPARE_JOB, ensure_ascii=False))
+        target_video_ids = None
+        if retry_errors:
+            target_video_ids = {
+                str(item.get("video_id")) for item in (_AUDIO_PREPARE_JOB.get("items") or [])
+                if isinstance(item, dict) and item.get("status") == "error" and item.get("video_id")
+            }
+            if not target_video_ids:
+                retry_errors = False
         _AUDIO_PREPARE_JOB = {
             "running": True, "phase": "starting", "progress": 0, "total": 0,
             "videos": 0, "tracks": 0, "direct_compatible": 0, "prepared": 0,
             "pending": 0, "errors": 0, "current": "Démarrage…", "items": [],
             "started_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
             "finished_at": None, "error": None,
+            "retry_errors": retry_errors,
         }
         snapshot = json.loads(json.dumps(_AUDIO_PREPARE_JOB, ensure_ascii=False))
-    threading.Thread(target=_executer_preparation_audio, args=(force, admin), daemon=True).start()
+    threading.Thread(
+        target=_executer_preparation_audio,
+        args=(force, admin, target_video_ids),
+        daemon=True,
+    ).start()
     return snapshot
 
 
@@ -2541,9 +2612,15 @@ def statut_audio_compatibility(admin: str = Depends(verifier_admin)):
 
 
 @app.post("/admin/audio-compatibility")
-def lancer_audio_compatibility(force: bool = Query(False), admin: str = Depends(verifier_admin)):
-    job = _demarrer_preparation_audio(admin=admin, force=force)
-    _journaliser_admin(admin, "Préparation audio universelle lancée", {"force": force})
+def lancer_audio_compatibility(
+    force: bool = Query(False),
+    retry_errors: bool = Query(False),
+    admin: str = Depends(verifier_admin),
+):
+    job = _demarrer_preparation_audio(admin=admin, force=force, retry_errors=retry_errors)
+    _journaliser_admin(admin, "Préparation audio universelle lancée", {
+        "force": force, "retry_errors": retry_errors,
+    })
     return job
 
 
