@@ -1776,6 +1776,7 @@ class Component extends DCLogic {
     this._clearStreamRecoveryTimer();
     this._recoveryInProgress = false;
     this._recoveryHistory = [];
+    this._clearMuxSeekBufferTimer();
     this._pendingMuxLocalSeek = null;
     this._waitingMuxLocalSeek = false;
     this._muxOpenRequestId = (this._muxOpenRequestId || 0) + 1;
@@ -2059,6 +2060,7 @@ class Component extends DCLogic {
       ? this._buildMuxedVideoUrl(videoId, audioIndex, muxPosition.anchor, true)
       : this._buildOriginalVideoUrl(videoId);
 
+    this._clearMuxSeekBufferTimer();
     this._videoStreamOffset = audioIndex >= 0 ? muxPosition.anchor : 0;
     this._pendingMuxLocalSeek = audioIndex >= 0 && muxPosition.localSeek > 0.05 ? muxPosition.localSeek : null;
     this._waitingMuxLocalSeek = false;
@@ -2246,7 +2248,7 @@ class Component extends DCLogic {
 
   _finishSourceChange = () => {
     var v = this._video;
-    if (!v || this._waitingOriginalSeek || this._waitingMuxLocalSeek) return;
+    if (!v || this._waitingOriginalSeek || this._waitingMuxLocalSeek || this._pendingMuxLocalSeek != null) return;
     this._changingSource = false;
     this._recoveryInProgress = false;
     this._clearStreamRecoveryTimer();
@@ -2256,9 +2258,88 @@ class Component extends DCLogic {
     this._resumeAfterSourceChange = false;
   };
 
+  _clearMuxSeekBufferTimer = () => {
+    if (this._muxSeekBufferTimer) {
+      clearInterval(this._muxSeekBufferTimer);
+      this._muxSeekBufferTimer = null;
+    }
+    this._muxSeekBufferStartedAt = 0;
+  };
+
+  _isMuxLocalTimeBuffered = (el, target) => {
+    if (!el || !el.buffered || !isFinite(target)) return false;
+    const safety = 0.35;
+    try {
+      for (let i = 0; i < el.buffered.length; i++) {
+        const start = el.buffered.start(i);
+        const end = el.buffered.end(i);
+        if (target >= start - 0.05 && target + safety <= end) return true;
+      }
+    } catch (e) {}
+    return false;
+  };
+
+  _tryApplyPendingMuxSeek = (forceFallback) => {
+    const el = this._video;
+    if (!el || this.state.currentAudioTrack < 0 || this._pendingMuxLocalSeek == null || this._waitingMuxLocalSeek) return false;
+    const target = Math.max(0, Number(this._pendingMuxLocalSeek) || 0);
+    if (target <= 0.05) {
+      this._pendingMuxLocalSeek = null;
+      this._clearMuxSeekBufferTimer();
+      this._finishSourceChange();
+      return true;
+    }
+
+    if (!this._isMuxLocalTimeBuffered(el, target)) {
+      if (!forceFallback) return false;
+      // Ne jamais forcer un seek dans une zone non tamponnée : sur un MP4
+      // fragmenté sans Range, certains navigateurs déplacent l'audio et la
+      // vidéo sur deux points différents. On démarre au keyframe d'ancrage,
+      // légèrement avant la position demandée, mais parfaitement synchronisé.
+      const landedAt = Math.max(0, Number(this._videoStreamOffset) || 0);
+      this._pendingMuxLocalSeek = null;
+      this._waitingMuxLocalSeek = false;
+      this._clearMuxSeekBufferTimer();
+      this.setState({ currentTime: landedAt });
+      this.toast('Position ajustée de quelques secondes pour garder le son synchronisé.', true);
+      this._finishSourceChange();
+      return true;
+    }
+
+    this._waitingMuxLocalSeek = true;
+    try {
+      el.currentTime = target;
+      return true;
+    } catch (e) {
+      this._waitingMuxLocalSeek = false;
+      return false;
+    }
+  };
+
+  _schedulePendingMuxSeek = () => {
+    if (this._pendingMuxLocalSeek == null || this._waitingMuxLocalSeek) return;
+    if (!this._muxSeekBufferStartedAt) this._muxSeekBufferStartedAt = Date.now();
+    if (this._tryApplyPendingMuxSeek(false)) return;
+    if (this._muxSeekBufferTimer) return;
+    this._muxSeekBufferTimer = setInterval(() => {
+      if (this._pendingMuxLocalSeek == null || this._waitingMuxLocalSeek || this.state.view !== 'player') {
+        this._clearMuxSeekBufferTimer();
+        return;
+      }
+      if (this._tryApplyPendingMuxSeek(false)) {
+        this._clearMuxSeekBufferTimer();
+        return;
+      }
+      if (Date.now() - (this._muxSeekBufferStartedAt || Date.now()) >= 30000) {
+        this._tryApplyPendingMuxSeek(true);
+      }
+    }, 180);
+  };
+
   _setVideoSource = (url, streamOffset, autoplay, originalSeek, sourceKind, muxLocalSeek) => {
     var v = this._video;
     this._sourceChangeId = (this._sourceChangeId || 0) + 1;
+    this._clearMuxSeekBufferTimer();
     this._resumeAfterSourceChange = !!autoplay;
     this._videoStreamOffset = Math.max(0, Number(streamOffset) || 0);
     this._pendingOriginalSeek = originalSeek == null ? null : Math.max(0, Number(originalSeek) || 0);
@@ -2504,14 +2585,14 @@ class Component extends DCLogic {
             this._pendingOriginalSeek = null;
           }
         } else {
+          // Le flux muxé est progressif et n'accepte pas les requêtes Range.
+          // Attendre que la position locale soit réellement tamponnée évite
+          // le seek prématuré responsable du décalage audio/vidéo.
           if (this._pendingMuxLocalSeek != null && this._pendingMuxLocalSeek > 0.05) {
-            var localTarget = this._pendingMuxLocalSeek;
-            if (isFinite(el.duration) && el.duration > 0) localTarget = Math.min(localTarget, Math.max(0, el.duration - 0.05));
-            this._waitingMuxLocalSeek = true;
-            try { el.currentTime = localTarget; } catch (e) {
-              this._waitingMuxLocalSeek = false;
-              this._pendingMuxLocalSeek = null;
+            if (isFinite(el.duration) && el.duration > 0) {
+              this._pendingMuxLocalSeek = Math.min(this._pendingMuxLocalSeek, Math.max(0, el.duration - 0.05));
             }
+            this._schedulePendingMuxSeek();
           } else {
             this._pendingMuxLocalSeek = null;
           }
@@ -2523,9 +2604,13 @@ class Component extends DCLogic {
 
       el.addEventListener('canplay', () => {
         this._clearStreamRecoveryTimer();
+        this._schedulePendingMuxSeek();
         this._finishSourceChange();
       });
-      el.addEventListener('loadeddata', () => this._markMediaProgress());
+      el.addEventListener('progress', () => this._schedulePendingMuxSeek());
+      el.addEventListener('canplaythrough', () => this._schedulePendingMuxSeek());
+      el.addEventListener('durationchange', () => this._schedulePendingMuxSeek());
+      el.addEventListener('loadeddata', () => { this._markMediaProgress(); this._schedulePendingMuxSeek(); });
       el.addEventListener('waiting', () => this._scheduleStreamRecovery('mise en mémoire tampon prolongée'));
       el.addEventListener('stalled', () => this._scheduleStreamRecovery('connexion au flux interrompue'));
 
@@ -2567,6 +2652,7 @@ class Component extends DCLogic {
         if (this._waitingMuxLocalSeek) {
           this._waitingMuxLocalSeek = false;
           this._pendingMuxLocalSeek = null;
+          this._clearMuxSeekBufferTimer();
           const absoluteTime = (this._videoStreamOffset || 0) + (el.currentTime || 0);
           this.setState({ currentTime: absoluteTime });
           this._finishSourceChange();
@@ -2587,7 +2673,8 @@ class Component extends DCLogic {
         this.setState({ playing: false, controlsVisible: true, currentTime: this.state.duration || this._getPlaybackTime() });
         if (this._epNeighbor(1)) this._startNextEpisodePrompt();
       });
-      el.play().catch(() => {});
+      // Ne pas lancer automatiquement ici : pour un flux muxé, la lecture
+      // commence uniquement après que le seek local soit réellement tamponné.
     }
   };
   playerWrapRef = (el) => { this._playerWrap = el; };
@@ -3131,7 +3218,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v6.3-audio-stable',
+      appVersion: 'v6.3.1-seek-sync',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError, catalogSyncing: s.catalogSyncing,

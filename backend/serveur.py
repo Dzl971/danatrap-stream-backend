@@ -2149,12 +2149,12 @@ def _audio_alignment_filter(media: dict, track: dict) -> str:
         filters.append(f"adelay={max(0, int(round(delta * 1000)))}:all=1")
     elif delta < -0.025:
         filters.extend([f"atrim=start={abs(delta):.6f}", "asetpts=PTS-STARTPTS"])
-    filters.append("aresample=48000:async=1000:min_hard_comp=0.100:first_pts=0")
+    filters.append("aresample=48000:async=1:min_hard_comp=0.100:first_pts=0")
     return ",".join(filters)
 
 
 def _audio_universal_codec_args(filter_chain: Optional[str] = None) -> list[str]:
-    filtre = filter_chain or "aresample=48000:async=1000:min_hard_comp=0.100:first_pts=0"
+    filtre = filter_chain or "aresample=48000:async=1:min_hard_comp=0.100:first_pts=0"
     return [
         "-af", filtre,
         "-c:a", "aac", "-profile:a", "aac_low",
@@ -2939,9 +2939,8 @@ def get_muxed_video(
             "-map", f"0:{video_stream_index}",
             "-map", f"0:{audio_stream_index}",
             "-c:v", "copy",
-            *_audio_universal_codec_args(
-                "aresample=48000:async=1000:min_hard_comp=0.100"
-            ),
+            *_audio_universal_codec_args(_audio_alignment_filter(tracks, selected)),
+            "-copytb", "1",
             "-sn", "-dn",
             "-map_metadata", "-1",
             "-avoid_negative_ts", "make_zero",
@@ -3022,7 +3021,7 @@ def get_muxed_video(
                 "X-Content-Type-Options": "nosniff",
                 "X-Accel-Buffering": "no",
                 "Accept-Ranges": "none",
-                "X-DTS-Audio-Mode": "single-source-stable",
+                "X-DTS-Audio-Mode": "buffered-seek-stable",
                 "X-DTS-Audio-Clock": "shared",
             },
         )
