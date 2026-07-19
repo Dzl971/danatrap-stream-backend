@@ -2011,6 +2011,26 @@ def _get_drive_auth_header() -> str:
     return f"Authorization: Bearer {access_token}\r\n"
 
 
+def _ffmpeg_drive_input_args(video_id: str) -> list[str]:
+    """Options HTTP robustes pour lire un média Google Drive avec FFmpeg.
+
+    On utilise uniquement des options présentes sur les versions FFmpeg
+    courantes de Render. Les reconnexions sont essentielles : une coupure
+    temporaire de la connexion Drive ne doit plus laisser la vidéo continuer
+    sans sa piste audio.
+    """
+    return [
+        "-rw_timeout", "60000000",
+        "-reconnect", "1",
+        "-reconnect_on_network_error", "1",
+        "-reconnect_on_http_error", "429,500,502,503,504",
+        "-reconnect_streamed", "1",
+        "-reconnect_delay_max", "8",
+        "-headers", _get_drive_auth_header(),
+        "-i", _get_drive_media_url(video_id),
+    ]
+
+
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
@@ -2147,6 +2167,15 @@ _TRACKS_CACHE_TTL = int(os.environ.get("TRACKS_CACHE_TTL", "3600"))
 _TRACKS_CACHE_LOCK = threading.Lock()
 _MEDIA_PROBE_LOCKS: dict[str, threading.Lock] = {}
 _MEDIA_PROBE_LOCKS_GUARD = threading.Lock()
+_KEYFRAME_CACHE: dict[str, list[float]] = {}
+_KEYFRAME_CACHE_LOCK = threading.Lock()
+_KEYFRAME_PROBE_LOCKS: dict[str, threading.Lock] = {}
+_KEYFRAME_PROBE_LOCKS_GUARD = threading.Lock()
+
+
+def _keyframe_probe_lock(video_id: str) -> threading.Lock:
+    with _KEYFRAME_PROBE_LOCKS_GUARD:
+        return _KEYFRAME_PROBE_LOCKS.setdefault(str(video_id), threading.Lock())
 
 
 def _media_probe_lock(video_id: str) -> threading.Lock:
@@ -2328,6 +2357,113 @@ def _probe_media(video_id: str, force: bool = False) -> dict:
             _TRACKS_CACHE[video_id] = {"cached_at": now, "data": data}
         return data
 
+def _previous_video_keyframe(video_id: str, target: float) -> float:
+    """Retourne le keyframe vidéo situé juste avant *target*.
+
+    Le mux vidéo est fait en copie directe. Commencer exactement sur un
+    keyframe évite qu'un seek recrée une piste audio à un instant différent de
+    la première image décodable.
+    """
+    target = max(0.0, float(target or 0.0))
+    if target <= 0.35:
+        return 0.0
+
+    with _KEYFRAME_CACHE_LOCK:
+        connus = list(_KEYFRAME_CACHE.get(str(video_id), []))
+    proches = [point for point in connus if point <= target + 0.05 and point >= max(0.0, target - 90.0)]
+    if proches and max(proches) >= target - 30.0:
+        return max(proches)
+
+    lock = _keyframe_probe_lock(video_id)
+    with lock:
+        with _KEYFRAME_CACHE_LOCK:
+            connus = list(_KEYFRAME_CACHE.get(str(video_id), []))
+        proches = [point for point in connus if point <= target + 0.05 and point >= max(0.0, target - 90.0)]
+        if proches and max(proches) >= target - 30.0:
+            return max(proches)
+
+        debut = max(0.0, target - 45.0)
+        fin = target + 0.35
+        cmd = [
+            "ffprobe",
+            "-rw_timeout", "60000000",
+            "-reconnect", "1",
+            "-reconnect_on_network_error", "1",
+            "-reconnect_on_http_error", "429,500,502,503,504",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "8",
+            "-headers", _get_drive_auth_header(),
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-skip_frame", "nokey",
+            "-read_intervals", f"{debut:.3f}%{fin:.3f}",
+            "-show_frames",
+            "-show_entries", "frame=best_effort_timestamp_time,pkt_dts_time",
+            "-of", "json",
+            _get_drive_media_url(video_id),
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=75)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            print(f"[DTS] recherche du keyframe impossible {video_id}@{target:.3f}: {exc}")
+            return 0.0
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip()[-800:]
+            print(f"[DTS] recherche du keyframe échouée {video_id}@{target:.3f}: {detail}")
+            return 0.0
+
+        try:
+            frames = json.loads(result.stdout or "{}").get("frames") or []
+        except Exception:
+            frames = []
+        trouves: list[float] = []
+        for frame in frames:
+            raw = frame.get("best_effort_timestamp_time", frame.get("pkt_dts_time"))
+            try:
+                point = max(0.0, float(raw))
+            except (TypeError, ValueError):
+                continue
+            if point <= target + 0.05:
+                trouves.append(point)
+        if trouves:
+            with _KEYFRAME_CACHE_LOCK:
+                fusion = set(round(x, 6) for x in _KEYFRAME_CACHE.get(str(video_id), []))
+                fusion.update(round(x, 6) for x in trouves)
+                _KEYFRAME_CACHE[str(video_id)] = sorted(fusion)[-500:]
+            return max(trouves)
+        return 0.0
+
+
+@app.get("/seek-point/{video_id}")
+def get_seek_point(
+    video_id: str,
+    target: float = Query(0.0),
+    utilisateur: dict = Depends(verifier_token),
+):
+    requested = max(0.0, float(target or 0.0))
+    try:
+        media = _probe_media(video_id)
+        duration = max(0.0, _safe_float(media.get("duration"), 0.0))
+        if duration > 0:
+            requested = min(requested, max(0.0, duration - 0.05))
+        anchor = _previous_video_keyframe(video_id, requested)
+        anchor = max(0.0, min(anchor, requested))
+        return {
+            "target": round(requested, 6),
+            "anchor": round(anchor, 6),
+            "local_seek": round(max(0.0, requested - anchor), 6),
+        }
+    except Exception as exc:
+        print(f"[DTS] point de lecture stable impossible {video_id}: {exc}")
+        fallback = 0.0
+        return {
+            "target": round(requested, 6),
+            "anchor": 0.0,
+            "local_seek": round(requested, 6),
+            "fallback": True,
+        }
+
+
 def _enumerer_videos_audio(bibliotheque: Optional[dict] = None) -> list[dict]:
     bibliotheque = bibliotheque if isinstance(bibliotheque, dict) else _scanner_bibliotheque()
     videos: list[dict] = []
@@ -2412,8 +2548,7 @@ def _preparer_piste_audio_compatible(video_id: str, track_index: int, titre: str
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             "-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err",
-            "-headers", _get_drive_auth_header(),
-            "-i", _get_drive_media_url(video_id),
+            *_ffmpeg_drive_input_args(video_id),
             "-map", f"0:{selected.get('stream_index')}",
             "-vn", "-sn", "-dn",
             *_audio_universal_codec_args(_audio_alignment_filter(media, selected)),
@@ -2752,10 +2887,15 @@ def get_muxed_video(
     token: Optional[str] = Query(None),
     start: Optional[float] = Query(None),
 ):
-    """Diffuse la vidéo et la piste audio choisie dans un seul flux MP4.
+    """Diffuse image et son dans un flux MP4 à horloge unique.
 
-    Le son et l'image partagent ainsi la même horloge média. Cela évite les
-    décalages et les micro-coupures provoqués par deux éléments HTML séparés.
+    La piste audio est toujours relue depuis le même fichier source que la
+    vidéo. L'ancienne méthode pouvait ouvrir deux connexions Google Drive
+    séparées (vidéo + cache audio) : si la connexion audio se coupait, l'image
+    continuait sans son et les deux horloges pouvaient dériver.
+
+    Le filtre aresample corrige les petites discontinuités de timestamps en
+    étirant légèrement l'audio ou en injectant les échantillons manquants.
     """
     _verifier_token_query(request, token)
     try:
@@ -2773,56 +2913,47 @@ def get_muxed_video(
         if audio_stream_index is None:
             raise HTTPException(status_code=422, detail="Piste audio invalide")
 
+        # Le frontend envoie un point d'ancrage déjà aligné sur un keyframe.
+        # Il effectue ensuite localement le petit seek restant dans ce flux.
         start_sec = max(0.0, float(start or 0.0))
-        # Recherche rapide près de la position demandée, puis petite recherche
-        # précise. On évite ainsi de relire tout le film depuis le début.
-        coarse_seek = max(0.0, start_sec - 3.0)
-        fine_seek = max(0.0, start_sec - coarse_seek)
-        cache_entry = _audio_cache_entry(video_id, selected, tracks)
+
         compatibility = _audio_compatibility(selected)
+        cache_entry = _audio_cache_entry(video_id, selected, tracks)
         if not cache_entry and compatibility.get("needs_conversion"):
-            # La première lecture reste immédiate grâce à la conversion à la volée.
-            # En parallèle, DTS prépare une version persistante pour les suivantes.
+            # Le cache Drive reste utile pour l'analyse et d'autres usages,
+            # mais la lecture muxée garde une seule source pour éviter toute
+            # perte de synchronisation.
             _planifier_piste_audio(video_id, track_index, selected.get("title") or "")
 
-        auth_header = _get_drive_auth_header()
         cmd = [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
             "-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err",
         ]
-        if coarse_seek > 0:
-            cmd += ["-ss", f"{coarse_seek:.3f}"]
-        cmd += ["-headers", auth_header, "-i", _get_drive_media_url(video_id)]
+        if start_sec > 0:
+            cmd += ["-ss", f"{start_sec:.3f}"]
+        cmd += _ffmpeg_drive_input_args(video_id)
 
-        if cache_entry:
-            if coarse_seek > 0:
-                cmd += ["-ss", f"{coarse_seek:.3f}"]
-            cmd += ["-headers", auth_header, "-i", _get_drive_media_url(str(cache_entry.get("file_id")))]
-        if fine_seek > 0:
-            cmd += ["-ss", f"{fine_seek:.3f}"]
-
-        cmd += ["-map", f"0:{video_stream_index}"]
-        if cache_entry:
-            cmd += ["-map", "1:a:0", "-c:v", "copy", "-c:a", "copy"]
-        else:
-            cmd += [
-                "-map", f"0:{audio_stream_index}",
-                "-c:v", "copy",
-                *_audio_universal_codec_args(),
-            ]
+        # IMPORTANT : vidéo et audio viennent du même input 0 et le démarrage
+        # se fait sur un keyframe réel.
         cmd += [
+            "-map", f"0:{video_stream_index}",
+            "-map", f"0:{audio_stream_index}",
+            "-c:v", "copy",
+            *_audio_universal_codec_args(
+                "aresample=48000:async=1000:min_hard_comp=0.100"
+            ),
             "-sn", "-dn",
             "-map_metadata", "-1",
             "-avoid_negative_ts", "make_zero",
-            "-max_muxing_queue_size", "4096",
+            "-max_muxing_queue_size", "8192",
         ]
         if str(tracks.get("video_codec") or "").lower() in {"hevc", "h265"}:
-            # Safari/iPhone et plusieurs téléviseurs attendent le tag hvc1.
             cmd += ["-tag:v", "hvc1"]
         cmd += [
             "-f", "mp4",
             "-movflags", "frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset",
             "-frag_duration", "1000000",
+            "-min_frag_duration", "500000",
             "-flush_packets", "1",
             "pipe:1",
         ]
@@ -2837,6 +2968,28 @@ def get_muxed_video(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=503, detail="ffmpeg n'est pas installé sur Render") from exc
 
+        # FFmpeg peut produire plusieurs messages d'erreur sur un fichier
+        # imparfait. On vide stderr en parallèle pour éviter que son tampon se
+        # remplisse et bloque silencieusement la sortie vidéo/audio.
+        stderr_parts: list[bytes] = []
+
+        def drain_stderr():
+            if process.stderr is None:
+                return
+            try:
+                while True:
+                    data = process.stderr.read(4096)
+                    if not data:
+                        break
+                    stderr_parts.append(data)
+                    if sum(len(x) for x in stderr_parts) > 32768:
+                        del stderr_parts[:-4]
+            except Exception:
+                pass
+
+        stderr_thread = threading.Thread(target=drain_stderr, daemon=True)
+        stderr_thread.start()
+
         def generate():
             try:
                 assert process.stdout is not None
@@ -2845,10 +2998,11 @@ def get_muxed_video(
                     if not chunk:
                         break
                     yield chunk
-                code = process.wait(timeout=5)
-                if code != 0 and process.stderr is not None:
-                    error = process.stderr.read().decode("utf-8", errors="replace").strip()[-1200:]
-                    print(f"[DanaTrap] mux {video_id}/{track_index} code={code}: {error}")
+                code = process.wait(timeout=8)
+                stderr_thread.join(timeout=1)
+                if code != 0:
+                    error = b"".join(stderr_parts).decode("utf-8", errors="replace").strip()[-1600:]
+                    print(f"[DanaTrap] mux stable {video_id}/{track_index} code={code}: {error}")
             except GeneratorExit:
                 pass
             finally:
@@ -2868,7 +3022,8 @@ def get_muxed_video(
                 "X-Content-Type-Options": "nosniff",
                 "X-Accel-Buffering": "no",
                 "Accept-Ranges": "none",
-                "X-DTS-Audio-Mode": "cache-drive" if cache_entry else "conversion-live",
+                "X-DTS-Audio-Mode": "single-source-stable",
+                "X-DTS-Audio-Clock": "shared",
             },
         )
     except HTTPException:
@@ -2876,7 +3031,7 @@ def get_muxed_video(
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     except Exception as exc:
-        print(f"[DanaTrap] mux audio/vidéo impossible: {exc}")
+        print(f"[DanaTrap] mux audio/vidéo stable impossible: {exc}")
         raise HTTPException(status_code=500, detail=f"Erreur de lecture avec cette piste audio: {exc}")
 
 
@@ -2910,8 +3065,7 @@ def get_audio(
             "ffmpeg", "-hide_banner", "-loglevel", "error",
             "-fflags", "+genpts+discardcorrupt", "-err_detect", "ignore_err",
             *seek_args,
-            "-headers", _get_drive_auth_header(),
-            "-i", _get_drive_media_url(source_id),
+            *_ffmpeg_drive_input_args(source_id),
             "-map", map_audio,
             "-vn", "-sn", "-dn",
             *codec_args,
@@ -2977,7 +3131,7 @@ def get_audio(
 _FRONTEND_DIR = (pathlib.Path(__file__).parent.parent / "frontend").resolve()
 if (_FRONTEND_DIR / "index.html").exists():
     ROUTES_PROTEGEES = {
-        "login", "bibliotheque", "stream", "poster", "tracks", "mux", "audio", "subtitle", "admin", "api",
+        "login", "bibliotheque", "stream", "poster", "tracks", "seek-point", "mux", "audio", "subtitle", "admin", "api",
         "favicon.ico", "token.pickle", "credentials.json",
         "utilisateurs.json", "static",
     }

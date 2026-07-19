@@ -1772,6 +1772,13 @@ class Component extends DCLogic {
     this._saveCurrentProgress();
     if (this._video) { try { this._video.pause(); this._video.removeAttribute('src'); this._video.load(); } catch (e) {} }
     if (this._hideTimer) { clearTimeout(this._hideTimer); this._hideTimer = null; }
+    this._stopPlaybackWatchdog();
+    this._clearStreamRecoveryTimer();
+    this._recoveryInProgress = false;
+    this._recoveryHistory = [];
+    this._pendingMuxLocalSeek = null;
+    this._waitingMuxLocalSeek = false;
+    this._muxOpenRequestId = (this._muxOpenRequestId || 0) + 1;
     this._video = null;
     this._videoStreamOffset = 0;
     this._pendingOriginalSeek = null;
@@ -2030,7 +2037,7 @@ class Component extends DCLogic {
     }
   };
 
-  startPreparedPlayback = () => {
+  startPreparedPlayback = async () => {
     const s = this.state;
     if (!s.playerSetupOpen || s.setupLoading || s.setupError || s.setupSubtitleLoading || s.setupSubtitleError || !s.setupVideoId) return;
 
@@ -2043,11 +2050,18 @@ class Component extends DCLogic {
     var startAt = s.setupResumeFromSaved ? Math.max(0, Number(s.setupSavedProgress) || 0) : 0;
     if (s.setupDuration > 0) startAt = Math.min(startAt, Math.max(0, s.setupDuration - 1));
     if (!s.setupResumeFromSaved && s.setupSavedProgress > 0) this._clearSavedProgress(videoId);
+    this.setState({ setupLoading: true });
+    var muxPosition = audioIndex >= 0
+      ? await this._resolveStableMuxPosition(videoId, startAt)
+      : { anchor: 0, localSeek: 0 };
+    if (!this.state.playerSetupOpen || this.state.setupVideoId !== videoId) return;
     var url = audioIndex >= 0
-      ? this._buildMuxedVideoUrl(videoId, audioIndex, startAt)
+      ? this._buildMuxedVideoUrl(videoId, audioIndex, muxPosition.anchor, true)
       : this._buildOriginalVideoUrl(videoId);
 
-    this._videoStreamOffset = audioIndex >= 0 ? startAt : 0;
+    this._videoStreamOffset = audioIndex >= 0 ? muxPosition.anchor : 0;
+    this._pendingMuxLocalSeek = audioIndex >= 0 && muxPosition.localSeek > 0.05 ? muxPosition.localSeek : null;
+    this._waitingMuxLocalSeek = false;
     this._pendingOriginalSeek = audioIndex < 0 && startAt > 0 ? startAt : null;
     this._waitingOriginalSeek = false;
     this._resumeAfterSourceChange = true;
@@ -2085,7 +2099,7 @@ class Component extends DCLogic {
     }, () => {
       const v = this._video;
       if (v && v.getAttribute('src') !== url) v.src = url;
-      if (v) v.play().catch(() => {});
+      if (v && audioIndex < 0) v.play().catch(() => {});
       if (!s.shortcutsSeen) setTimeout(() => this.setState({shortcutsHelpOpen:true}), 650);
       if (subtitleIndex >= 0 && !this._subtitleCues) this._setSubtitleTrack(String(subtitleIndex));
       else this._updateSubtitle();
@@ -2112,9 +2126,10 @@ class Component extends DCLogic {
     return this.api + '/stream/' + encodeURIComponent(videoId) + '?token=' + encodeURIComponent(this.state.token);
   };
 
-  _buildMuxedVideoUrl = (videoId, trackIndex, startSec) => {
+  _buildMuxedVideoUrl = (videoId, trackIndex, startSec, forceFresh) => {
     var url = this.api + '/mux/' + encodeURIComponent(videoId) + '/' + trackIndex + '?token=' + encodeURIComponent(this.state.token);
     if (startSec && startSec > 0) url += '&start=' + startSec.toFixed(3);
+    if (forceFresh) url += '&recovery=' + Date.now() + '-' + ((this._sourceChangeId || 0) + 1);
     return url;
   };
 
@@ -2124,22 +2139,132 @@ class Component extends DCLogic {
     return Math.max(0, (this.state.currentAudioTrack >= 0 ? (this._videoStreamOffset || 0) : 0) + localTime);
   };
 
+  _resolveStableMuxPosition = async (videoId, rawTarget) => {
+    const target = Math.max(0, Number(rawTarget) || 0);
+    if (target <= 0.35) return { target: target, anchor: 0, localSeek: target };
+    try {
+      const res = await this.authFetch('/seek-point/' + encodeURIComponent(videoId) + '?target=' + encodeURIComponent(target.toFixed(3)));
+      if (res.status === 401) { this.sessionExpired(); throw new Error('Session expirée'); }
+      if (!res.ok) throw new Error('Point de lecture indisponible');
+      const data = await res.json();
+      const anchor = Math.max(0, Math.min(target, Number(data.anchor) || 0));
+      const localSeek = Math.max(0, Number(data.local_seek));
+      return { target: target, anchor: anchor, localSeek: isFinite(localSeek) ? localSeek : Math.max(0, target - anchor) };
+    } catch (e) {
+      console.warn('[DTS] recherche du keyframe impossible, démarrage direct:', e);
+      return { target: target, anchor: 0, localSeek: target };
+    }
+  };
+
+  _openMuxAt = async (videoId, trackIndex, rawTarget, autoplay) => {
+    if (!videoId || trackIndex < 0) return false;
+    const requestId = (this._muxOpenRequestId || 0) + 1;
+    this._muxOpenRequestId = requestId;
+    const target = Math.max(0, Number(rawTarget) || 0);
+    this._changingSource = true;
+    if (this._video) { try { this._video.pause(); } catch (e) {} }
+    this.setState({ currentTime: target, videoLoading: true, audioSwitching: true, videoError: '' });
+    const pos = await this._resolveStableMuxPosition(videoId, target);
+    if (requestId !== this._muxOpenRequestId || this.state.currentVideoId !== videoId || this.state.currentAudioTrack !== trackIndex) return false;
+    const url = this._buildMuxedVideoUrl(videoId, trackIndex, pos.anchor, true);
+    this._setVideoSource(url, pos.anchor, !!autoplay, null, 'mux', pos.localSeek);
+    return true;
+  };
+
+  _clearStreamRecoveryTimer = () => {
+    if (this._streamRecoveryTimer) {
+      clearTimeout(this._streamRecoveryTimer);
+      this._streamRecoveryTimer = null;
+    }
+  };
+
+  _markMediaProgress = () => {
+    this._lastMediaProgressAt = Date.now();
+    this._lastMediaProgressTime = this._getPlaybackTime();
+  };
+
+  _startPlaybackWatchdog = () => {
+    if (this._playbackWatchdog) return;
+    this._markMediaProgress();
+    this._playbackWatchdog = setInterval(() => {
+      const v = this._video;
+      if (!v || this.state.view !== 'player' || !this.state.playing || v.paused || v.ended) return;
+      if (this.state.currentAudioTrack < 0 || this._changingSource || this._recoveryInProgress) return;
+      const now = Date.now();
+      const mediaTime = this._getPlaybackTime();
+      if (mediaTime > (Number(this._lastMediaProgressTime) || 0) + 0.12) {
+        this._lastMediaProgressTime = mediaTime;
+        this._lastMediaProgressAt = now;
+        return;
+      }
+      const frozenFor = now - (this._lastMediaProgressAt || now);
+      if (frozenFor >= 9000 && (v.readyState < 3 || v.networkState === 2)) {
+        this._recoverMuxStream('flux interrompu');
+      }
+    }, 2000);
+  };
+
+  _stopPlaybackWatchdog = () => {
+    if (this._playbackWatchdog) {
+      clearInterval(this._playbackWatchdog);
+      this._playbackWatchdog = null;
+    }
+  };
+
+  _scheduleStreamRecovery = (reason) => {
+    const v = this._video;
+    if (!v || v.paused || v.ended || this.state.currentAudioTrack < 0 || this._changingSource || this._recoveryInProgress) return;
+    this._clearStreamRecoveryTimer();
+    const checkpoint = this._getPlaybackTime();
+    this._streamRecoveryTimer = setTimeout(() => {
+      this._streamRecoveryTimer = null;
+      const current = this._getPlaybackTime();
+      if (!this._video || this._video.paused || this._changingSource) return;
+      if (current > checkpoint + 0.7) { this._markMediaProgress(); return; }
+      this._recoverMuxStream(reason || 'mise en mémoire tampon prolongée');
+    }, 7500);
+  };
+
+  _recoverMuxStream = (reason) => {
+    const v = this._video;
+    if (!v || !this.state.currentVideoId || this.state.currentAudioTrack < 0 || this._changingSource || this._recoveryInProgress) return false;
+    const now = Date.now();
+    this._recoveryHistory = (this._recoveryHistory || []).filter(t => now - t < 120000);
+    if (this._recoveryHistory.length >= 3) {
+      this._clearStreamRecoveryTimer();
+      this.setState({ videoLoading: false, audioSwitching: false, videoError: 'La connexion au flux audio est instable. Relance la lecture dans quelques instants.' });
+      return false;
+    }
+    this._recoveryHistory.push(now);
+    this._recoveryInProgress = true;
+    this._clearStreamRecoveryTimer();
+    const target = Math.max(0, this._getPlaybackTime() - 0.35);
+    this.toast('Reconnexion audio automatique…', true);
+    this._openMuxAt(this.state.currentVideoId, this.state.currentAudioTrack, target, true);
+    return true;
+  };
+
   _finishSourceChange = () => {
     var v = this._video;
-    if (!v || this._waitingOriginalSeek) return;
+    if (!v || this._waitingOriginalSeek || this._waitingMuxLocalSeek) return;
     this._changingSource = false;
+    this._recoveryInProgress = false;
+    this._clearStreamRecoveryTimer();
+    this._markMediaProgress();
     this.setState({ videoLoading: false, audioSwitching: false, videoError: '' });
     if (this._resumeAfterSourceChange) v.play().catch(() => {});
     this._resumeAfterSourceChange = false;
   };
 
-  _setVideoSource = (url, streamOffset, autoplay, originalSeek, sourceKind) => {
+  _setVideoSource = (url, streamOffset, autoplay, originalSeek, sourceKind, muxLocalSeek) => {
     var v = this._video;
     this._sourceChangeId = (this._sourceChangeId || 0) + 1;
     this._resumeAfterSourceChange = !!autoplay;
     this._videoStreamOffset = Math.max(0, Number(streamOffset) || 0);
     this._pendingOriginalSeek = originalSeek == null ? null : Math.max(0, Number(originalSeek) || 0);
     this._waitingOriginalSeek = false;
+    this._pendingMuxLocalSeek = (sourceKind === 'mux' && Number(muxLocalSeek) > 0.05) ? Math.max(0, Number(muxLocalSeek) || 0) : null;
+    this._waitingMuxLocalSeek = false;
     this._sourceKind = sourceKind || 'original';
     this._changingSource = true;
     if (v) {
@@ -2165,8 +2290,8 @@ class Component extends DCLogic {
     this.setState({ currentTime: target });
 
     if (this.state.currentAudioTrack >= 0 && this.state.currentVideoId) {
-      var url = this._buildMuxedVideoUrl(this.state.currentVideoId, this.state.currentAudioTrack, target);
-      this._setVideoSource(url, target, !!autoplay, null, 'mux');
+      this._markMediaProgress();
+      this._openMuxAt(this.state.currentVideoId, this.state.currentAudioTrack, target, !!autoplay);
       return;
     }
 
@@ -2227,9 +2352,8 @@ class Component extends DCLogic {
       return;
     }
 
-    var muxedUrl = this._buildMuxedVideoUrl(this.state.currentVideoId, index, target);
     this.setState({ currentAudioTrack: index, audioSwitching: true }, () => {
-      this._setVideoSource(muxedUrl, target, shouldPlay, null, 'mux');
+      this._openMuxAt(this.state.currentVideoId, index, target, shouldPlay);
     });
   };
 
@@ -2355,6 +2479,10 @@ class Component extends DCLogic {
             : (el.currentTime || 0);
           if (this.state.duration > 0) t = Math.min(this.state.duration, t);
           this.setState({ currentTime: t });
+          if (t > (Number(this._lastMediaProgressTime) || 0) + 0.04) {
+            this._lastMediaProgressTime = t;
+            this._lastMediaProgressAt = Date.now();
+          }
           var now = Date.now();
           if (now - (this._lastProgressSave || 0) >= 5000) {
             this._lastProgressSave = now;
@@ -2375,19 +2503,40 @@ class Component extends DCLogic {
           } else {
             this._pendingOriginalSeek = null;
           }
-        } else if ((!this.state.duration || this.state.duration <= 0) && isFinite(el.duration) && el.duration > 0) {
-          this.setState({ duration: (this._videoStreamOffset || 0) + el.duration });
+        } else {
+          if (this._pendingMuxLocalSeek != null && this._pendingMuxLocalSeek > 0.05) {
+            var localTarget = this._pendingMuxLocalSeek;
+            if (isFinite(el.duration) && el.duration > 0) localTarget = Math.min(localTarget, Math.max(0, el.duration - 0.05));
+            this._waitingMuxLocalSeek = true;
+            try { el.currentTime = localTarget; } catch (e) {
+              this._waitingMuxLocalSeek = false;
+              this._pendingMuxLocalSeek = null;
+            }
+          } else {
+            this._pendingMuxLocalSeek = null;
+          }
+          if ((!this.state.duration || this.state.duration <= 0) && isFinite(el.duration) && el.duration > 0) {
+            this.setState({ duration: (this._videoStreamOffset || 0) + el.duration });
+          }
         }
       });
 
-      el.addEventListener('canplay', () => this._finishSourceChange());
+      el.addEventListener('canplay', () => {
+        this._clearStreamRecoveryTimer();
+        this._finishSourceChange();
+      });
+      el.addEventListener('loadeddata', () => this._markMediaProgress());
+      el.addEventListener('waiting', () => this._scheduleStreamRecovery('mise en mémoire tampon prolongée'));
+      el.addEventListener('stalled', () => this._scheduleStreamRecovery('connexion au flux interrompue'));
 
       el.addEventListener('error', () => {
         if (this._sourceKind === 'mux' && this.state.currentAudioTrack >= 0 && this.state.currentVideoId) {
+          if (this._changingSource || this._recoveryInProgress) return;
+          if (this._recoverMuxStream('erreur du flux audio')) return;
           var target = this.state.currentTime || this._getPlaybackTime();
           var shouldResume = !!this._resumeAfterSourceChange || !el.paused;
           this._sourceKind = 'fallback';
-          this.toast('Cette piste ne peut pas être remuxée. Retour à l’audio original.', false);
+          this.toast('La piste audio reste indisponible. Retour temporaire à l’audio original.', false);
           this.setState({ currentAudioTrack: -1 }, () => {
             this._setVideoSource(this._buildOriginalVideoUrl(this.state.currentVideoId), 0, shouldResume, target, 'original');
           });
@@ -2397,14 +2546,33 @@ class Component extends DCLogic {
       });
 
       el.addEventListener('play', () => {
+        this._clearStreamRecoveryTimer();
+        this._markMediaProgress();
+        this._startPlaybackWatchdog();
         this.setState({ playing: true });
         this._scheduleHide();
       });
+      el.addEventListener('playing', () => {
+        this._clearStreamRecoveryTimer();
+        this._markMediaProgress();
+        this._startPlaybackWatchdog();
+      });
       el.addEventListener('pause', () => {
+        this._clearStreamRecoveryTimer();
+        this._stopPlaybackWatchdog();
         this.setState({ playing: false, controlsVisible: true });
         this._saveCurrentProgress();
       });
       el.addEventListener('seeked', () => {
+        if (this._waitingMuxLocalSeek) {
+          this._waitingMuxLocalSeek = false;
+          this._pendingMuxLocalSeek = null;
+          const absoluteTime = (this._videoStreamOffset || 0) + (el.currentTime || 0);
+          this.setState({ currentTime: absoluteTime });
+          this._finishSourceChange();
+          this._updateSubtitle();
+          return;
+        }
         if (this._waitingOriginalSeek) {
           this._waitingOriginalSeek = false;
           this._pendingOriginalSeek = null;
@@ -2963,7 +3131,7 @@ class Component extends DCLogic {
       rememberLabelColor: s.rememberMe ? '#D0D5DD' : '#848D9C',
       onPseudo: this.onPseudo, onPassword: this.onPassword, onKey: this.onKey,
       doLogin: this.doLogin, doLogout: this.doLogout,
-      appVersion: 'v6.2.2-ffprobe-compatible',
+      appVersion: 'v6.3-audio-stable',
 
       userPseudo: s.userPseudo,
       libLoading: s.libLoading, libError: s.libError, catalogSyncing: s.catalogSyncing,
@@ -3080,7 +3248,7 @@ class Component extends DCLogic {
       detailCannotPlay: s.showKind === 'film' ? !(show && show.video_id) : !detailSeasons.some(season => Array.isArray(season.episodes) && season.episodes.length > 0),
       detailHasSeasons: detailSeasons.length > 0,
       videoEl: s.videoUrl ? React.createElement('video', {
-        ref: this.videoRef, src: s.videoUrl, onClick: this.togglePlay, playsInline: true, crossOrigin: 'anonymous', 'x-webkit-airplay':'allow', disableRemotePlayback:false,
+        ref: this.videoRef, src: s.videoUrl, onClick: this.togglePlay, playsInline: true, preload: 'auto', crossOrigin: 'anonymous', 'x-webkit-airplay':'allow', disableRemotePlayback:false,
         style: { width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' },
       }) : null,
       audioEl: null,
